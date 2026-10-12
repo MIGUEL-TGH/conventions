@@ -1,6 +1,6 @@
 # Convenciones generales de desarrollo
 
-**Versión 2.7.0** · 2026-10-12 · historial al final del documento
+**Versión 2.8.0** · 2026-10-12 · historial al final del documento
 
 Documento **transversal**: aplica a todos los proyectos, frontend y backend.
 
@@ -56,6 +56,8 @@ por su nombre y consultar su fuente original.
 | HTTP: métodos, códigos y cabeceras | **RFC 9110** (HTTP Semantics) | Formal (IETF) | `rfc-editor.org/rfc/rfc9110` |
 | Token de sesión | **JWT** (RFC 7519) con `firebase/php-jwt`, en cookie `httpOnly` | Formal (IETF) / OWASP | `rfc-editor.org/rfc/rfc7519` · `cheatsheetseries.owasp.org` |
 | Fechas en la API | **ISO 8601** en UTC (`2026-10-11T22:03:00Z`) | Formal (ISO) | `iso.org/iso-8601-date-and-time-format.html` |
+| Contraseñas | **NIST SP 800-63B-4** | Formal (NIST) | `pages.nist.gov/800-63-4/sp800-63b.html` |
+| Cabeceras de seguridad de la API | **OWASP REST Security Cheat Sheet** | De facto (OWASP) | `cheatsheetseries.owasp.org` |
 
 Lo que **no** tiene un estándar único y por eso se decide aquí de forma explícita:
 nombres de carpetas, casing del JSON de la API, prefijos de tablas, el nombre de los
@@ -123,6 +125,14 @@ Dos consecuencias prácticas que no son estéticas:
    regla no es retroactiva: el código existente sin tests no se cubre de golpe. Los nombres
    de los tests son identificadores (inglés); sus descripciones son texto (español). Ver §4.5
    y §5.3.
+9. **Un control que no se probó no existe.** Todo hook, paso de la CI, regla de `.htaccess` o
+   escáner se prueba al crearlo o cambiarlo con un caso que **debe** fallar, y falla en voz
+   alta: nada de `2>/dev/null` ni `|| true` que oculten errores. Un control que dice "limpio"
+   sin haber revisado nada es peor que no tenerlo.
+10. **Una corrección se cierra en tres pasos:** un test que reproduce el fallo (principio 8),
+    un barrido de "¿dónde más vive este mismo patrón?" en todo el repo, y la verificación
+    contra lo commiteado (`git show HEAD:<archivo>`), no contra el disco: corregido en disco
+    no es corregido.
 
 ---
 
@@ -251,6 +261,29 @@ tests/           misma estructura que src/; <Nombre>.test.js (§4.5)
   necesita. La validación en el navegador (`accept`, tamaño) es sólo comodidad para el
   usuario; la que cuenta es la del servidor (§5.4). La URL de un archivo es
   `<PREFIJO>MULTIMEDIA` + la ruta relativa que devuelve la API.
+- **HTML y URLs que vienen de la API** pasan por `src/js/safeHtml.js` (probado con DOMPurify 3
+  en jsdom): HTML saneado antes de `v-html`, y sólo URLs `http(s)` en un `:href`. Si un campo
+  no necesita HTML, se muestra con `{{ }}` y no hace falta sanearlo.
+  ```js
+  import DOMPurify from 'dompurify'
+
+  // HTML que viene de la API: se sanea antes de v-html (§4.3).
+  export function safeHtml (html) {
+    return DOMPurify.sanitize(html)
+  }
+
+  // URL que viene de la API: sólo http(s) llega a un :href (§4.3).
+  export function safeUrl (url) {
+    return /^https?:\/\//i.test(url) ? url : null
+  }
+  ```
+- **Dependencias sólo desde npm,** bajo el lockfile y `npm audit`. Nunca un CDN con `@latest`;
+  si un CDN es inevitable, versión exacta con `integrity` y `crossorigin="anonymous"`.
+- **Sin source maps en producción:** permiten reconstruir el código fuente. Vite no los genera
+  por defecto (`build.sourcemap`); en Vue CLI, `productionSourceMap: false` en `vue.config.js`.
+- **CSP del frontend en dos pasos:** primero `Content-Security-Policy-Report-Only`, se revisan
+  los reportes y se ajusta; después la cabecera real. Si las dependencias vienen de npm, la
+  política no necesita listar CDNs.
 - **Los datos de la API no se renombran.** Un campo se llama igual en la BD, la API, la
   pestaña Network del navegador y Vue, sin capa de conversión:
   - Se leen y se envían en snake_case: `user.created_at`, `{ created_at: date }`.
@@ -306,6 +339,10 @@ la regla de tests y lo declaran en su `README.md`.
   cambios y no termina.
 - **Imports explícitos** (`import { describe, it, expect } from 'vitest'`), sin variables
   globales: así Standard no necesita configuración extra.
+- **Tests de saneado de HTML en jsdom,** no en happy-dom: con happy-dom, DOMPurify devuelve un
+  resultado incorrecto (probado: dejaba pasar un `<script>`). El archivo de test empieza con
+  `// @vitest-environment jsdom`, y el resto de los tests sigue en happy-dom. jsdom se instala
+  en una versión compatible con el Node del proyecto (probado con jsdom 26).
 - **Componentes:** se prueba su interfaz pública —props, eventos y slots—, no su estado
   interno, y sin snapshots (guía de Vue). **Services:** con la instancia `api` simulada,
   `vi.mock('@/plugins/axios', () => ({ api: { get: vi.fn() } }))`.
@@ -390,7 +427,32 @@ Las que no contienen clases (`routes/`, `public/`, `multimedia/`) siguen en min�
 
 **Raíz web:** el servidor (`DocumentRoot` en Apache) apunta a `public/`, nunca a la raíz del
 repo. Así `.env`, `api/`, `vendor/` y `composer.json` quedan fuera del alcance de una URL
-por construcción, sin depender de que el servidor respete un `.htaccess`.
+por construcción, sin depender de que el servidor respete un `.htaccess`. El `.git` tampoco se
+despliega dentro de la raíz web.
+
+**Backend existente que sirve desde la raíz del repo** (excepción del §13): este `.htaccess` en
+la raíz (probado en Apache 2.4: `.git/HEAD` en minúsculas y mayúsculas, `.env`, cualquier
+carpeta oculta, `vendor/`, `composer.*` y respaldos `.sql` responden 403; `.well-known/`, las
+páginas, la API y las imágenes, 200):
+```apache
+# Backend existente que sirve desde la raíz del repo (§13). Con public/ como raíz web no hace falta.
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Cualquier segmento que empiece con punto (.git/, .env, .claude/…), salvo .well-known/.
+  RewriteRule "(^|/)\.(?!well-known/)" - [NC,F,L]
+  # Dependencias de Composer, sus metadatos y respaldos.
+  RewriteRule "(^|/)vendor/" - [NC,F,L]
+  RewriteRule "(^|/)composer\.(json|lock)$" - [NC,F,L]
+  RewriteRule "\.(sql|gz|zip|bak|log|ini)$" - [NC,F,L]
+</IfModule>
+```
+- `<FilesMatch "^\.">` **no basta:** sólo evalúa el último segmento de la ruta. Bloquea
+  `/.env`, pero deja pasar `/.git/HEAD`.
+- `.well-known/` queda abierto porque lo usa Let's Encrypt para emitir los certificados HTTPS.
+- `RewriteRule` en un `.htaccess` exige que la carpeta tenga `FollowSymLinks` o
+  `SymLinksIfOwnerMatch` (XAMPP lo trae). Sin eso, Apache responde 403 a todo el sitio.
 
 **Archivos subidos:** los públicos en `public/multimedia/`, que nunca ejecuta scripts; los
 privados en `storage/`, fuera de la raíz web. Las reglas completas están en §5.4.
@@ -475,6 +537,8 @@ Fuente: `phpunit.de/supported-versions.html`.
   MySQL/MariaDB.
 - **En la CI corren los dos grupos** (§14), contra un contenedor con el motor de producción
   (§7.1) y después de aplicar las migraciones (§7.2).
+- **Matriz de autorización:** cada endpoint protegido tiene tests de las tres respuestas, 401
+  sin sesión, 403 con sesión pero sin permiso, y 200 con permiso (§5.5).
 
 ### 5.4 Archivos subidos
 
@@ -610,6 +674,104 @@ llama y dónde vive.
   Son dos capas: `FilesMatch` niega las extensiones ejecutables, y `php_flag engine off` apaga
   PHP en la carpeta aunque alguna extensión se escapara de la lista.
 
+### 5.5 Seguridad del backend
+
+Reglas que salen de las auditorías de seguridad de un proyecto real: cada una corresponde a un
+fallo que ocurrió.
+
+- **Cada endpoint declara su acceso, de forma explícita:**
+  - Público a propósito, con un comentario que lo diga.
+  - `authenticate()` sólo para acciones sobre la propia cuenta (perfil, cambio de contraseña,
+    cierre de sesión).
+  - `authorize(módulo, nivel)` para todo lo demás. Un endpoint que sólo verifica que haya
+    sesión deja pasar a cualquier usuario autenticado, tenga o no permiso.
+
+  La matriz de autorización se prueba (401, 403 y 200; §5.3).
+- **La estructura del SQL nunca sale de la petición:** ni nombres de columna, ni de
+  placeholders, ni el `ORDER BY`. Sólo valores, siempre como parámetros. `json_decode()` puede
+  entregar un objeto donde se esperaba una lista, y sus claves las elige el cliente: se valida
+  la forma antes de usarla. Para `IN (…)`, `Core/SqlIn.php` (probado con PHP 8.1: acepta
+  listas de números o textos; rechaza objetos, listas anidadas, listas vacías y valores sueltos):
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Core;
+
+  use App\Core\Exceptions\ValidationException;
+
+  // "IN (?, ?, ?)" para valores que llegan en la petición. Sólo entran valores escalares, como
+  // parámetros; la petición nunca aporta texto al SQL (§5.5).
+  final class SqlIn
+  {
+    /** @return array{0: string, 1: list<int|string>} */
+    public static function build(mixed $values, string $field): array
+    {
+      if (!is_array($values) || $values === [] || !array_is_list($values)) {
+        throw new ValidationException([$field => 'Debe ser una lista con al menos un valor.']);
+      }
+      foreach ($values as $value) {
+        if (!is_int($value) && !is_string($value)) {
+          throw new ValidationException([$field => 'Sólo se aceptan números o textos.']);
+        }
+      }
+
+      return ['IN (' . implode(', ', array_fill(0, count($values), '?')) . ')', $values];
+    }
+  }
+  ```
+  Uso: `[$in, $params] = SqlIn::build($body['state_ids'] ?? null, 'state_ids');` y luego
+  `"… WHERE state_id {$in}"` con `$params`. Si el orden lo elige el usuario, se traduce desde
+  una lista fija: `['name' => 'full_name', 'date' => 'created_at'][$sort] ?? 'id'`.
+- **Un solo helper por control de seguridad.** Una función de seguridad copiada en dos
+  archivos termina corregida en uno y vulnerable en el otro.
+- **HTML y URLs que se guardan:** si un campo admite HTML, se sanea al guardar con una lista
+  de etiquetas permitidas (por ejemplo, HTML Purifier); si no, se guarda como texto. Un campo
+  de URL sólo acepta `http(s)`: `preg_match('#^https?://#i', $url)`. El frontend vuelve a
+  sanear al mostrar (§4.3).
+- **Contraseñas** (NIST SP 800-63B-4; probado con PHP 8.1):
+  - Hash con bcrypt de coste 12, y re-hash transparente al iniciar sesión:
+    ```php
+    $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+
+    // Al iniciar sesión, después de un password_verify() exitoso:
+    if (password_needs_rehash($hash, PASSWORD_BCRYPT, ['cost' => 12])) {
+      // guardar password_hash($password, PASSWORD_BCRYPT, ['cost' => 12])
+    }
+    ```
+  - Mínimo 15 caracteres (NIST, cuando la contraseña es el único factor). Máximo 72 **bytes**:
+    bcrypt ignora lo que pasa de ahí, y dos contraseñas que difieren después del byte 72 se
+    aceptan como la misma. Con acentos caben menos caracteres (cada uno ocupa 2 bytes). NIST
+    recomienda permitir al menos 64; `PASSWORD_ARGON2ID` no tiene ese límite, si el servidor
+    lo ofrece.
+  - Sin reglas de composición (mayúsculas, símbolos…) ni cambios periódicos obligatorios. El
+    cambio se fuerza sólo si hay evidencia de que la contraseña se filtró.
+  - Una contraseña temporal generada por el sistema es aleatoria y larga:
+    `bin2hex(random_bytes(12))` da 24 caracteres (96 bits).
+- **Los secretos fallan cerrados:** sin valor de respaldo (`getenv('JWT_SECRET') ?: 'algo'`
+  deja en producción un secreto conocido); si falta, la API no arranca. Los secretos se
+  comparan con `hash_equals()`, nunca con `===` o `!==`.
+- **Logs sin datos sensibles:** nunca contraseñas, tokens ni datos personales. Los saltos de
+  línea de un mensaje se reemplazan antes de escribirlo (`str_replace(["\r", "\n"], ' ', $msg)`),
+  para que nadie pueda fabricar líneas falsas en el log.
+- **Sin endpoints de prueba ni código muerto alcanzable:** lo que no se usa se borra (git lo
+  conserva; principio 3).
+- **Cabeceras de seguridad de la API** (OWASP REST Security Cheat Sheet), en el `.htaccess` de
+  la API (probado en Apache 2.4: salen también en las respuestas de error):
+  ```apache
+  # Cabeceras de seguridad de la API (§5.5, OWASP REST Security Cheat Sheet).
+  <IfModule mod_headers.c>
+    Header always set Cache-Control "no-store"
+    Header always set Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "no-referrer"
+  </IfModule>
+  ```
+  En producción, servida por HTTPS, se agrega `Strict-Transport-Security "max-age=31536000"`
+  (no probado aquí: requiere HTTPS).
+
 ---
 
 ## 6. Contrato de API
@@ -670,7 +832,8 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
   `400` petición mal formada (parámetros inválidos, `type` desconocido) · `401` sin sesión o
   con la sesión vencida · `403` con sesión pero sin permiso · `404` no encontrado ·
   `405` método no permitido · `409` conflicto (una clave `UNIQUE` repetida, como un correo ya
-  registrado) · `422` validación de campos · `500` error interno.
+  registrado) · `413` archivo demasiado grande (§5.4) · `422` validación de campos ·
+  `429` demasiados intentos (§6.2) · `500` error interno.
 - **Un 405 lleva la cabecera `Allow`** con los métodos que sí acepta el recurso
   (`Allow: GET, POST`): la exige la norma HTTP (RFC 9110).
 - **Con Bearer (§6.2), el 401 lleva `WWW-Authenticate: Bearer`.** Con cookie no hay un esquema
@@ -686,14 +849,22 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 - **Librería:** `firebase/php-jwt` (`composer require firebase/php-jwt`), algoritmo HS256.
 - **`JWT_SECRET` de al menos 256 bits** (§10); la librería rechaza claves más cortas. Se
   genera con `php -r "echo bin2hex(random_bytes(32));"`.
-- **Claims obligatorios:** `sub` (id del usuario), `iat` y `exp`. La duración sale de
-  `JWT_TTL`, en segundos, con un máximo de 8 horas (una jornada). Cualquiera puede decodificar
-  un JWT y leer su contenido: nunca lleva datos sensibles.
+- **Claims obligatorios:** `sub` (id del usuario), `iss` (el emisor, `JWT_ISSUER`), `jti` (un
+  identificador único, para poder revocarlo), `iat` y `exp`. La duración sale de `JWT_TTL`, en
+  segundos, con un máximo de 8 horas (una jornada). Cualquiera puede decodificar un JWT y leer
+  su contenido: nunca lleva datos sensibles.
 - **Emitir**, al iniciar sesión (probado con php-jwt 7 y PHP 8.1):
   ```php
   $now = time();
   $ttl = (int) getenv('JWT_TTL');
-  $token = JWT::encode(['sub' => $userId, 'iat' => $now, 'exp' => $now + $ttl], (string) getenv('JWT_SECRET'), 'HS256');
+  $claims = [
+    'sub' => $userId,
+    'iss' => getenv('JWT_ISSUER'),
+    'jti' => bin2hex(random_bytes(16)),
+    'iat' => $now,
+    'exp' => $now + $ttl,
+  ];
+  $token = JWT::encode($claims, (string) getenv('JWT_SECRET'), 'HS256');
   setcookie('access_token', $token, [
     'expires' => $now + $ttl,
     'path' => '/',
@@ -710,7 +881,21 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
   } catch (UnexpectedValueException | DomainException $e) {
     // → 401 'Inicia sesión para continuar.'
   }
+  if (!isset($claims->exp, $claims->jti) || ($claims->iss ?? null) !== getenv('JWT_ISSUER')) {
+    // → 401: un token sin vencimiento nunca caducaría, y uno de otro emisor no es nuestro
+  }
   ```
+- **Cerrar sesión revoca el token:** su `jti` se guarda en una tabla de tokens revocados (con
+  su `exp`, para poder limpiarla), el `AuthMiddleware` la consulta en cada petición, y la
+  cookie se borra.
+- **Cambiar la contraseña cierra las demás sesiones:** el token lleva la fecha del último
+  cambio (`password_changed_at` en `users`), y una sesión emitida antes de esa fecha recibe 401.
+  Sin esto, "cambia tu contraseña" no sirve ante una sesión robada.
+- **Límite de intentos de inicio de sesión,** por IP **y** por usuario (por ejemplo, 5 en 15
+  minutos), con 429 al superarlo.
+- **La misma respuesta para cualquier fallo de inicio de sesión:** usuario inexistente, cuenta
+  inactiva o contraseña incorrecta dan el mismo 401 y el mismo mensaje, y todos cuentan como
+  intento. Un mensaje distinto revela qué cuentas existen.
 - **Cerrar sesión:** el mismo `setcookie` con `'expires' => 1`, que hace que el navegador la
   borre.
 - `'secure' => true` también funciona en `http://localhost`, que los navegadores tratan como
@@ -848,6 +1033,20 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
   - `EMULATE_PREPARES` en `false`: las consultas preparadas las resuelve el motor, no PHP.
   - Sesión en UTC: un `DATETIME` guarda la hora tal cual, así que la zona de la sesión que
     escribe define qué significa. Fijada en UTC, siempre significa lo mismo.
+- **La app nunca se conecta como `root`.** Tiene su propio usuario, sólo con permisos sobre
+  los datos de su base; las migraciones usan otro que además puede cambiar el esquema
+  (probado con MariaDB 10.4: el usuario de la app lee y escribe, pero no puede crear ni borrar
+  tablas ni leer otras bases):
+  ```sql
+  CREATE USER 'app'@'localhost' IDENTIFIED BY '<contraseña larga>';
+  GRANT SELECT, INSERT, UPDATE, DELETE ON app.* TO 'app'@'localhost';
+
+  CREATE USER 'app_migrations'@'localhost' IDENTIFIED BY '<otra contraseña larga>';
+  GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON app.* TO 'app_migrations'@'localhost';
+  ```
+  `root` tiene contraseña, también en local.
+- **El motor sólo escucha en local:** `bind-address=127.0.0.1` en `my.ini` (o `my.cnf`), salvo
+  que la BD viva en otro servidor, y entonces sólo para la IP de la app.
 
 ### 7.2 Migraciones
 
@@ -1001,6 +1200,7 @@ horizontal, en `md`.
     y distinto en cada entorno (§6.2).
   - `JWT_TTL`: duración de la sesión en segundos, máximo 28800 (8 horas).
   - `CORS_ALLOWED_ORIGINS`: orígenes del frontend separados por comas (§6.5).
+  - `JWT_ISSUER`: el emisor de los tokens, por ejemplo la URL de la API (§6.2).
 - **Backend:** `.env` y sus respaldos (`.env.*.bak`) **fuera de git**, porque tienen secretos;
   se versiona sólo `.env.example`.
 - **Frontend:** los archivos de cada modo (`.env.development`, `.env.production`) **se
@@ -1010,6 +1210,14 @@ horizontal, en `md`.
   en el frontend.
 - `.env` **nunca dentro de la raíz web** (§5.2): lo que está ahí se puede pedir por URL.
 - Ningún secreto ni cadena de conexión en el repositorio.
+- **Ninguna credencial de producción en el `.env` local,** ni siquiera comentada: cada entorno
+  tiene las suyas.
+- **Los secretos fallan cerrados** (§5.5): si falta uno, la API no arranca; nunca usa un valor
+  por defecto.
+- **PHP y Apache en producción** no revelan errores ni versiones:
+  - `php.ini`: `display_errors=Off`, `display_startup_errors=Off`, `log_errors=On`,
+    `expose_php=Off`.
+  - `httpd.conf`: `ServerTokens Prod` y `ServerSignature Off`.
 
 ### Versiones de runtime
 
@@ -1050,8 +1258,19 @@ con especificación pública, permite generar changelogs y versionado semántico
   - Backend: `.env*` con la excepción `!.env.example`, y los archivos subidos (§5.4):
     `public/multimedia/**` con la excepción `!public/multimedia/.htaccess`, y `storage/`.
   - Frontend: `*.local` (§10).
+  - Ambos, por patrón y no por nombre (probado: ignora respaldos con cualquier nombre, en
+    mayúsculas o comprimidos): `*.sql`, `*.sql.gz`, `*.dump`, `*.pem`, `*.key`, `id_rsa*`. Un
+    proyecto con migraciones SQL numeradas las conserva con
+    `!bd_migrations/[0-9][0-9][0-9]_*.sql`.
+- **Si un secreto o un respaldo llegó a git:** se cambian todas las credenciales expuestas,
+  se purga del historial (`git filter-repo`) y se verifica con un clon limpio desde GitHub,
+  no con la copia local. Borrarlo en un commit nuevo no basta: sigue en el historial.
 - **`package-lock.json` y `composer.lock` se versionan:** `npm ci` y `composer install`
   instalan exactamente esas versiones, en local y en la CI.
+- **Versiones en `package.json` y `composer.json`:** las bibliotecas con `^`, para recibir
+  parches de seguridad al actualizar (el lockfile fija la versión exacta instalada). Versión
+  exacta sólo en herramientas 0.x, donde una versión menor puede romper la configuración
+  (como `neostandard`, §14).
 - **Sin archivos-respaldo en el repo:** `index 2024-03-15.js`, `main v1.js`, `api_legacy/`.
   Un respaldo es código que ya no se ejecuta; para conservarlo se usa un tag o una rama.
   Si las dos versiones se ejecutan durante una migración, ver `legacy/` en §4.3.
@@ -1079,7 +1298,7 @@ Un estándar sólo sirve si las excepciones son explícitas. Éstas son las nues
 | PER Coding Style | Indentación de **2 espacios** en PHP, no 4 | Coherencia con el frontend (`.editorconfig` usa 2). Una sola configuración de editor para todo el stack. |
 | PSR-1 y PSR-4 | Un backend **existente sin namespaces** puede seguir con `require_once` y carpetas en minúsculas hasta migrar; lo declara en su `README.md`. **Todo backend nuevo usa namespaces.** | Migrar a namespaces toca cada archivo del backend: se hace como tarea propia, no de pasada en otro cambio. |
 | Google JSON Style Guide | Campos JSON en snake_case, no camelCase | Coherencia con las columnas de la BD. Evita mapeo en el backend y en el frontend: un campo se llama igual en la BD, la API y Vue. |
-| Raíz web en `public/` (§5.2) | Un backend **existente** que sirve desde la raíz del repo puede seguir así si un `.htaccess` bloquea los archivos ocultos (`.env`), `api/`, `vendor/` y `composer.*`, y pasa la comprobación del §14; lo declara en su `README.md`. **Todo backend nuevo usa `public/`.** | Mover la raíz web cambia la configuración del servidor en cada entorno. Mientras tanto la protección depende del `.htaccess`, y por eso se comprueba. |
+| Raíz web en `public/` (§5.2) | Un backend **existente** que sirve desde la raíz del repo puede seguir así si usa el `.htaccess` raíz del §5.2 (bloquea cualquier segmento oculto, como `.git/` y `.env`, además de `vendor/`, `composer.*` y respaldos) y pasa la comprobación del §14; lo declara en su `README.md`. **Todo backend nuevo usa `public/`.** | Mover la raíz web cambia la configuración del servidor en cada entorno. Mientras tanto la protección depende del `.htaccess`, y por eso se comprueba. |
 
 ## 14. Herramientas que hacen cumplir esto
 
@@ -1211,11 +1430,16 @@ responde `403` o `404`, nunca `200`:
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" https://<servidor>/<proyecto>/.env
 curl -s -o /dev/null -w "%{http_code}\n" https://<servidor>/<proyecto>/composer.json
+curl -s -o /dev/null -w "%{http_code}\n" https://<servidor>/<proyecto>/.git/HEAD
+curl -s -o /dev/null -w "%{http_code}\n" https://<servidor>/<proyecto>/.GIT/HEAD
 ```
 
 Se usa `-o /dev/null` para ver sólo el código, sin descargar el contenido. Un `200` en
 `.env` significa que las credenciales son públicas: se corrige la raíz web y se cambian
-todas las contraseñas del archivo.
+todas las contraseñas del archivo. Un `200` en `.git/HEAD` significa que se puede descargar
+el repositorio completo, con su historial: se corrige igual, y se trata todo lo que haya
+pasado por git (respaldos, credenciales) como expuesto. La variante en mayúsculas importa en
+servidores Linux, que distinguen `.GIT` de `.git`.
 
 ### Ambos
 
@@ -1330,6 +1554,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - name: .env versionados sólo con variables públicas (§10)
+        run: |
+          files=$(git ls-files '.env*')
+          if [ -n "$files" ] && grep -HnvE '^[[:space:]]*(#|$)|^(VITE_|VUE_APP_)[A-Z0-9_]+=|^(NODE_ENV|BASE_URL)=' $files; then
+            echo "Un .env versionado define variables que no son públicas (§10)." >&2
+            exit 1
+          fi
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm test
       - run: npm run build
 ```
@@ -1366,6 +1598,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2   # lee la versión de .php-version
       - run: composer install --no-interaction --no-progress
+      - run: composer audit
       - run: vendor/bin/php-cs-fixer check --diff
       - run: vendor/bin/phinx migrate
       - run: vendor/bin/phpunit
@@ -1373,6 +1606,13 @@ jobs:
 
 - **Tests:** el frontend corre todos (`npm test`). El backend levanta un contenedor con el
   motor de producción, aplica las migraciones y corre los grupos `unit` y `database` (§5.3).
+- **Auditoría de dependencias:** `npm audit --omit=dev --audit-level=high` y `composer audit`
+  hacen fallar la CI ante una vulnerabilidad conocida (en npm, sólo las altas de producción;
+  probados en local, terminan en 0 sin hallazgos).
+- **`.env` del frontend:** el paso revisa sólo los archivos versionados y falla si alguno
+  define algo distinto de `VITE_*`, `VUE_APP_*`, `NODE_ENV` o `BASE_URL` (probado: pasa con
+  variables públicas, detiene un `DEPLOY_PUBLIC_PATH` y no revisa los `*.local`). Un proyecto
+  que necesite otra variable de build la agrega a la expresión y la declara en su `README.md`.
 - **La BD de la CI** sólo existe mientras corre el workflow: su contraseña (`ci`) no es un
   secreto. Con MySQL, la imagen es `mysql:<versión>`, las variables `MYSQL_ROOT_PASSWORD` y
   `MYSQL_DATABASE`, y la comprobación `mysqladmin ping -h 127.0.0.1`.
@@ -1437,6 +1677,15 @@ jobs:
 | Token de sesión en `localStorage` | Cookie `httpOnly` (§6.2) |
 | Fechas sin zona en la API (`2026-10-11 22:03:00`) | ISO 8601 en UTC con `Z` (§6.4) |
 | CORS con `*` en la API | Orígenes en `CORS_ALLOWED_ORIGINS` (§6.5) |
+| Proteger un endpoint sólo con `authenticate()` | `authorize(módulo, nivel)` (§5.5) |
+| Nombres de columna, placeholders u `ORDER BY` que salen de la petición | Sólo valores como parámetros; `SqlIn` y listas fijas (§5.5) |
+| Copiar una función de seguridad en otro archivo | Un solo helper compartido (§5.5) |
+| `v-html` o `:href` con datos de la API sin sanear | `safeHtml` y `safeUrl` (§4.3) |
+| Un secreto con valor por defecto o comparado con `===` | Falla cerrado; `hash_equals()` (§5.5) |
+| La app conectada a la BD como `root` | Usuario propio con privilegios mínimos (§7.1) |
+| `<FilesMatch "^\.">` como única protección de `.git` | `.htaccess` raíz del §5.2, o `public/` como raíz web |
+| Dependencias por CDN con `@latest`, o source maps en producción | npm con lockfile; builds sin source maps (§4.3) |
+| Un control (hook, CI, regla) sin probar con un caso que debe fallar | Principio 9 del §3 |
 | Guardar un archivo subido con la extensión o el nombre que envió el usuario | Nombre aleatorio y extensión según el tipo real (§5.4) |
 | Guardar en la BD una ruta de archivo enviada por el cliente | Sólo la ruta que genera el servidor (§5.4) |
 | Aceptar SVG o HTML subidos por usuarios | PDF o imágenes, según la lista del recurso (§5.4) |
@@ -1473,6 +1722,9 @@ jobs:
     §6.2 y `Core/Cors` del §6.5 en el backend; `src/plugins/axios.js` del §4.3 en el frontend.
 13. Antes del primer endpoint que reciba archivos (§5.4): `Core/FileUpload.php`, la detección
     del 413 en el Core y el `.htaccess` de `public/multimedia/`.
+14. Seguridad desde el día uno (§5.5, §7.1, §10): `Core/SqlIn.php`, las cabeceras de la API,
+    usuarios de BD con privilegios mínimos, la configuración de producción de PHP y Apache, y
+    la comprobación por URL del §14 (incluido `.git/HEAD`) en cada entorno.
 
 ---
 
@@ -1480,6 +1732,7 @@ jobs:
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.8.0 | 2026-10-12 | Lecciones de tres auditorías de seguridad. Principios 9 (un control que no se probó no existe) y 10 (una corrección se cierra en tres pasos) (§3). §5.5 nueva: acceso declarado por endpoint, estructura del SQL fuera de la petición con `SqlIn`, un solo helper por control, HTML y URLs saneados, contraseñas (bcrypt 12, 15 caracteres a 72 bytes), secretos que fallan cerrados, logs sin datos sensibles y cabeceras de la API. `.htaccess` raíz para backends existentes que bloquea `.git/` (§5.2). Endurecimiento de sesiones y código 429 (§6.1, §6.2). Usuarios de BD con privilegios mínimos (§7.1). Configuración de producción (§10). `.gitignore` por patrones y política de versiones (§11). `safeHtml`, sin CDN ni source maps, y CSP (§4.3); tests de saneado en jsdom (§4.5). Comprobación de `.git/HEAD`, auditoría de dependencias y revisión de `.env` en la CI (§14). |
 | 2.7.0 | 2026-10-12 | El frontend versiona sus `.env.[modo]` (sólo valores públicos) e ignora `*.local`; el backend sigue igual (§10, §11). Vuetify: valores por defecto de las versiones 3 y 4, ejemplo de Vue 3 probado y ejemplo de Vue 2 con `scrollBarWidth: 0` (§8.1). CORS `*` prohibido en la API y permitido en archivos públicos (§6.5). `pre-commit` que encuentra el proyecto en la raíz o en una carpeta de primer nivel, y CI para proyectos en subcarpeta (§14). |
 | 2.6.0 | 2026-10-12 | Archivos subidos (§5.4): `multipart/form-data`; tipo verificado con `finfo` y extensión según el tipo; nombre aleatorio; sin SVG ni HTML; públicos en `public/multimedia/` sin ejecución de scripts y privados en `storage/`; la BD guarda sólo la ruta del servidor; 413 si se supera `post_max_size`; borrado contenido con `realpath()`; los archivos subidos no se versionan (§11). Frontend con `FormData` (§4.3). |
 | 2.5.0 | 2026-10-11 | Contrato de API (§6): `status` igual al código HTTP; mensajes en español para el usuario; `/users/{id}`, `PATCH`, 405 con `Allow` y 409 (§6.1); JWT de `firebase/php-jwt` en cookie `httpOnly` (§6.2); paginación con `page`/`per_page` y `total` de todas las páginas (§6.3); fechas ISO 8601 en UTC (§6.4); CORS con orígenes declarados (§6.5). Frontend: instancia `api` en `src/plugins/axios.js` y fechas con `Intl` (§4.3). |
