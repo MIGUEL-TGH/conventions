@@ -1,6 +1,6 @@
 # Convenciones generales de desarrollo
 
-**Versión 2.0.0** · 2026-10-11 · historial al final del documento
+**Versión 2.1.0** · 2026-10-11 · historial al final del documento
 
 Documento **transversal**: aplica a todos los proyectos, frontend y backend.
 
@@ -24,8 +24,8 @@ por su nombre y consultar su fuente original.
 
   | Versión | Cuándo | Ejemplo |
   |---|---|---|
-  | **Mayor** (2.0.0 → 3.0.0) | Código que cumplía deja de cumplir | Cambiar el casing de una categoría |
-  | **Menor** (2.0.0 → 2.1.0) | Regla o sección nueva que no invalida nada | Agregar reglas de tests |
+  | **Mayor** (2.0.0 → 3.0.0) | Se cambia o elimina una regla existente: código que la cumplía deja de cumplir | Cambiar el casing de una categoría |
+  | **Menor** (2.0.0 → 2.1.0) | Se agrega una regla o sección nueva; el código existente que no la cumpla se adapta o se declara como excepción en su `README.md` | Agregar los breakpoints responsivos |
   | **Parche** (2.0.0 → 2.0.1) | Redacción, erratas o ejemplos, sin cambiar reglas | Corregir una referencia rota |
 
   La versión va dentro del texto, no en el nombre del archivo (principio 3 del §3): git
@@ -44,6 +44,7 @@ por su nombre y consultar su fuente original.
 | PHP — formato | **PER Coding Style 3.0** (extiende y reemplaza a PSR-12; es la versión que aplica PHP-CS-Fixer con `@PER-CS3x0`, §14) | Formal (PHP-FIG) | `www.php-fig.org/per/coding-style/` |
 | PHP — autocarga | **PSR-4** (Autoloader) | Formal (PHP-FIG) | `www.php-fig.org/psr/psr-4/` |
 | CSS | **BEM** para componentes complejos | De facto | `getbem.com` |
+| Breakpoints responsivos | **Bootstrap 5** (`sm` 576 · `md` 768 · `lg` 992 · `xl` 1200; sin `xxl`), mobile first | De facto | `getbootstrap.com/docs/5.3/layout/breakpoints/` |
 | URLs | Minúsculas y guiones (guía de Google para URLs) | De facto / SEO | `developers.google.com/search` |
 | Variables de entorno | **POSIX** (IEEE Std 1003.1): mayúsculas, dígitos y `_` | Formal | POSIX 8.1 |
 | Mensajes de commit | **Conventional Commits 1.0.0** | De facto | `conventionalcommits.org` |
@@ -363,7 +364,49 @@ Todas las APIs comparten el mismo contrato. No se inventa uno nuevo por proyecto
 - Fuentes autohospedadas en `src/assets/fonts/<familia>/` (`montserrat/`) con archivos kebab-case
   (`montserrat-v31-latin-700.woff2`) y su `@font-face` en un CSS dedicado.
 - Sin colores ni tamaños "mágicos" repetidos: variables CSS o el tema de la librería de UI
-  (por ejemplo, Vuetify).
+  (por ejemplo, Vuetify). Los breakpoints son la excepción: son valores fijos del §8.1 y se
+  escriben tal cual.
+
+### 8.1 Responsividad
+
+Breakpoints de Bootstrap 5, sin `xxl`. Los nombres son de tamaño y el dispositivo es sólo una
+referencia aproximada: un iPad en horizontal (1024px) cae en `lg`, y muchos teléfonos en
+horizontal, en `md`.
+
+| Nombre | Referencia | Ancho | Media query (mobile first) |
+|---|---|---|---|
+| `xs` | Mobile | < 576px | Ninguna: son los estilos base |
+| `sm` | Mobile landscape | 576 – 767.98px | `@media (min-width: 576px)` |
+| `md` | Tablet | 768 – 991.98px | `@media (min-width: 768px)` |
+| `lg` | Desktop | 992 – 1199.98px | `@media (min-width: 992px)` |
+| `xl` | Extra Large | ≥ 1200px | `@media (min-width: 1200px)` |
+
+- **Mobile first.** Los estilos sin media query son los de `xs`; cada breakpoint sólo agrega
+  cambios hacia arriba con `min-width`, en orden ascendente. Un estilo que aplica de `md` en
+  adelante se escribe una vez:
+  ```css
+  .grid { grid-template-columns: 1fr; }                                      /* xs */
+  @media (min-width: 768px)  { .grid { grid-template-columns: 1fr 1fr; } }    /* md y más */
+  @media (min-width: 1200px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+  ```
+- **Rango cerrado sólo para un estilo de un único breakpoint,** con el `.98` de Bootstrap en
+  el máximo, que evita huecos con anchos fraccionarios en pantallas de alta densidad:
+  `@media (min-width: 768px) and (max-width: 991.98px)` aplica sólo en `md`.
+- **Sintaxis clásica** (`min-width` / `max-width`), no la de rangos (`768px <= width`): tiene
+  soporte en todos los navegadores y es la que usa Bootstrap.
+- **Los valores se escriben tal cual.** Las variables CSS no funcionan dentro de `@media`;
+  como los cinco valores están fijados aquí, no cuentan como tamaños mágicos.
+- **Etiqueta viewport obligatoria** en `index.html`:
+  `<meta name="viewport" content="width=device-width, initial-scale=1">`. Sin ella, el móvil
+  simula una pantalla de unos 980px y ningún breakpoint de móvil se activa. Vite y Vue CLI la
+  incluyen en su plantilla: no se borra.
+- **Vuetify se alinea con estos breakpoints.** Sus valores por defecto son otros (en la
+  versión actual, 600, 840, 1145, 1545 y 2138px); sin ajustarlos, sus columnas (`cols`, `md`…)
+  y `useDisplay()` cambian en anchos distintos que el CSS. En Vue 3 (no probado):
+  ```js
+  createVuetify({ display: { thresholds: { sm: 576, md: 768, lg: 992, xl: 1200 } } })
+  ```
+  Vuetify 2 se configura de otra forma: se verifica en cada proyecto.
 
 ## 9. Assets estáticos
 
@@ -631,7 +674,8 @@ git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
    en `package.json`.
 4. Frontend: Vue 3 + Vite + Pinia, componentes con Composition API y `<script setup>`, y
    desde el día uno el `eslint.config.js` del §14 tal cual, con `neostandard` en versión
-   exacta y el script `"lint": "eslint ."`.
+   exacta y el script `"lint": "eslint ."`. Si usa Vuetify, sus breakpoints alineados con
+   el §8.1.
 5. Backend: PHP-CS-Fixer con `@PER-CS3x0` (§14), **namespaces PSR-4** y **`public/` como raíz web**
    desde el día uno.
 6. Backend: `Core/` completo (`Router`, `Request`, `Response`, `Cors`, `BaseController` y
@@ -645,5 +689,6 @@ git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.1.0 | 2026-10-11 | Responsividad (§8.1): breakpoints de Bootstrap 5 sin `xxl`, mobile first, etiqueta viewport y alineación de Vuetify. Se precisa qué es una versión mayor y una menor ("Cómo se usa este documento"). |
 | 2.0.0 | 2026-10-11 | Documento universal: sin proyectos de origen ni deuda técnica (las excepciones van al `README.md` de cada proyecto). Vue 3 + Vite + Pinia con Composition API y `<script setup>` para proyectos nuevos; Vue 2 queda para existentes (§4.4). Recursos nombrados por su segmento de URL, en plural (§6). Backends nuevos con namespaces PSR-4, carpetas de clases en PascalCase y `public/` como raíz web (§5.2). PER Coding Style con PHP-CS-Fixer en lugar de PSR-12 con PHP_CodeSniffer; `neostandard` para Vue 3 (§14). Datos de la API en snake_case también en el frontend (§4.3). SQL en el Service (§5.2). Versiones de runtime (§10). |
 | 1.x | — | Versión sin numerar: incluía la tabla de proyectos y la deuda técnica por proyecto. |
