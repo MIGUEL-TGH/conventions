@@ -1,6 +1,6 @@
 # Convenciones generales de desarrollo
 
-**Versión 2.1.0** · 2026-10-11 · historial al final del documento
+**Versión 2.4.0** · 2026-10-11 · historial al final del documento
 
 Documento **transversal**: aplica a todos los proyectos, frontend y backend.
 
@@ -50,6 +50,8 @@ por su nombre y consultar su fuente original.
 | Mensajes de commit | **Conventional Commits 1.0.0** | De facto | `conventionalcommits.org` |
 | Formato de editor | **EditorConfig** | De facto | `editorconfig.org` |
 | SQL / nombres de tablas | snake_case minúsculas | Convención de facto (sin estándar formal) | — |
+| Charset de la BD | `utf8mb4` + `utf8mb4_unicode_ci` | **Decisión propia** (común a MySQL y MariaDB, §7.1) | — |
+| Migraciones de BD | **Phinx** | De facto | `phinx.org` |
 | JSON de la API | snake_case | **Decisión propia** (ver §6) | — |
 
 Lo que **no** tiene un estándar único y por eso se decide aquí de forma explícita:
@@ -102,7 +104,8 @@ Dos consecuencias prácticas que no son estéticas:
    Los archivos de código siguen el casing de lo que definen (§4.1, §5.1): `UserCard.vue`,
    `UsersController.php`, `visitTracker.js`. También en ASCII, sin espacios ni acentos.
    Única excepción en carpetas: las que contienen clases PHP con namespace van en
-   PascalCase (`Controllers/`), porque PSR-4 las exige así (§5.2).
+   PascalCase (`Controllers/`), porque PSR-4 las exige así (§5.2). Única excepción en
+   archivos: las migraciones siguen el formato que impone Phinx (§7.2).
 6. **Idioma:** identificadores y URLs de la API en **inglés**; textos de UI, URLs del frontend y nombres oficiales
    del dominio (siglas como CURP o RFC, figuras legales como `consejos-regionales`) en **español**.
    Los nombres de carpetas y archivos son identificadores: van en inglés (`period-2019-2024/`),
@@ -111,6 +114,12 @@ Dos consecuencias prácticas que no son estéticas:
    No mezclar idiomas dentro de un identificador salvo nombre oficial del dominio.
 7. **Siglas oficiales en MAYÚSCULAS** en PascalCase (`CURPService`, `AboutRFCView`)
    y en minúsculas en rutas (`/curp`, `curp.routes.php`).
+8. **Tests donde hay lógica.** Todo bug corregido lleva un test que lo reproduce, cuando es
+   testeable, y todo código nuevo con lógica (Services del backend; services, composables y
+   utilidades del frontend) lleva tests. No hay porcentaje de cobertura obligatorio, y la
+   regla no es retroactiva: el código existente sin tests no se cubre de golpe. Los nombres
+   de los tests son identificadores (inglés); sus descripciones son texto (español). Ver §4.5
+   y §5.3.
 
 ---
 
@@ -175,6 +184,7 @@ src/
   js/            utilidades puras sin dependencia de Vue
   data/          catálogos y constantes estáticas
 public/          img/, json/, pdf/   (kebab-case)
+tests/           misma estructura que src/; <Nombre>.test.js (§4.5)
 ```
 
 ### 4.3 Reglas
@@ -200,7 +210,8 @@ public/          img/, json/, pdf/   (kebab-case)
 - **Nunca sufijos de versión ni de prueba en `src/`:** `ProductCard_V1..V3`, `DashboardViewV1.vue`,
   `main v1.js`, `testCharts.vue`. Sólo existe la versión vigente; el resto vive en git.
 - **El `.` nunca separa palabras.** Sólo separa la extensión y, cuando una convención lo
-  define, un sufijo de tipo (`user-profiles.routes.php`, `.env.example`). `BarChart.js.js`
+  define, un sufijo de tipo (`user-profiles.routes.php`, `.env.example`, `UserCard.test.js`).
+  `BarChart.js.js`
   (doble extensión) y `user.settings.json` (punto entre palabras) están mal formados.
 - **Ni vistas ni componentes llaman a `axios` directamente**: usan una función de `src/services/`,
   nombrada con verbo (`getUsers`, `sendMessage`), con la URL base desde la variable
@@ -238,6 +249,46 @@ y es la que usan los composables y Pinia. La guía no fija un orden dentro de `<
 así que el de la tabla es propio: sigue el mismo orden que la guía fija para Options API
 (props → data → computed → watch → ciclo de vida → methods), para que un componente
 Vue 2 y uno Vue 3 se lean igual de arriba abajo.
+
+### 4.5 Tests
+
+Vitest + `@vue/test-utils` + happy-dom: la combinación que recomienda la guía de Vue para
+proyectos con Vite. Aplica a Vue 3; los proyectos Vue 2 (Vue CLI, sin Vite) quedan fuera de
+la regla de tests y lo declaran en su `README.md`.
+
+- **Ubicación:** `tests/` en la raíz, con la misma estructura que `src/`. El archivo se llama
+  como lo que prueba + `.test.js`: `src/components/UserCard.vue` →
+  `tests/components/UserCard.test.js`. Nada de pruebas dentro de `src/` (§4.3).
+- **Configuración**, en `vite.config.js` (probada con Vitest 5), junto al alias `@` → `src/`
+  que ya trae Vite:
+  ```js
+  test: {
+    environment: 'happy-dom',
+    include: ['tests/**/*.test.js']
+  }
+  ```
+  Y el script `"test": "vitest run"` en `package.json`: sin `run`, Vitest se queda vigilando
+  cambios y no termina.
+- **Imports explícitos** (`import { describe, it, expect } from 'vitest'`), sin variables
+  globales: así Standard no necesita configuración extra.
+- **Componentes:** se prueba su interfaz pública —props, eventos y slots—, no su estado
+  interno, y sin snapshots (guía de Vue). **Services:** con `axios` simulado
+  (`vi.mock('axios')`).
+  ```js
+  import { describe, it, expect } from 'vitest'
+  import { mount } from '@vue/test-utils'
+  import UserCard from '@/components/UserCard.vue'
+
+  describe('UserCard', () => {
+    it('muestra el nombre y emite itemSelected con el id al hacer clic', async () => {
+      const wrapper = mount(UserCard, { props: { user: { id: 7, full_name: 'Ana López' } } })
+
+      expect(wrapper.text()).toContain('Ana López')
+      await wrapper.trigger('click')
+      expect(wrapper.emitted('itemSelected')).toEqual([[7]])
+    })
+  })
+  ```
 
 ---
 
@@ -282,9 +333,18 @@ public/             raíz web: la única carpeta que sirve el servidor
   index.php         bootstrap: carga ../.env, ../vendor/autoload.php y las rutas
   .htaccess         redirige a index.php toda petición que no sea un archivo existente
   multimedia/       archivos subidos; su .htaccess impide ejecutar PHP
+tests/              Unit/ (sin BD) y Database/ (BD _test), con la estructura de api/ (§5.3)
+phpunit.xml         grupos unit y database (§5.3)
+database/
+  migrations/       migraciones de Phinx (§7.2)
+  seeds/            datos iniciales
+phinx.php           configuración de migraciones; lee la conexión del entorno (§7.2)
 composer.json       autoload PSR-4 ("App\\" → "api/") y versión de PHP (require.php, §10)
 vendor/             dependencias de composer, junto a composer.json — nunca se edita
 .env                configuración local, siempre fuera de git
+.php-version        versión de PHP que corre: local, CI y producción (§10)
+.githooks/          hooks de git (§14)
+.github/workflows/  ci.yml (§14)
 ```
 
 Las carpetas que contienen clases van en PascalCase porque PSR-4 las traduce del namespace
@@ -304,6 +364,81 @@ la carpeta lo ejecuta, puede correr código en el servidor.
 - El **Controller** recibe HTTP, valida el `type` y delega. Nunca escribe SQL.
 - El **Service** tiene las reglas de negocio y el SQL del recurso. Nunca imprime HTTP.
 - El **BaseModel** sólo conecta y ejecuta lo que el Service le pasa. No conoce ningún recurso.
+
+### 5.3 Tests
+
+PHPUnit, en la versión más reciente compatible con el `.php-version` del proyecto (§10).
+Fuente: `phpunit.de/supported-versions.html`.
+
+| PHP | PHPUnit |
+|---|---|
+| 8.4 o superior | 13 |
+| 8.3 | 12 |
+| 8.2 | 11 (ya sin correcciones) |
+| 8.1 | 10 (ya sin correcciones) |
+
+- **Ubicación:** `tests/` en la raíz, en dos grupos con la estructura de `api/`:
+  `tests/Unit/` (sin BD) y `tests/Database/` (con BD). El archivo se llama como la clase +
+  `Test.php`, sufijo que exige PHPUnit: `api/Services/UsersService.php` →
+  `tests/Unit/Services/UsersServiceTest.php`. Namespace `App\Tests\…`, declarado en
+  `composer.json`: `"autoload-dev": { "psr-4": { "App\\Tests\\": "tests/" } }`.
+- **Métodos en inglés, descripción en español** con `#[TestDox]` (principio 8 del §3):
+  ```php
+  #[TestDox('devuelve ok para el código 200')]
+  public function testGetStatusReturnsOkFor200(): void
+  ```
+- **`phpunit.xml`** en la raíz (probado con PHPUnit 10.5 y PHP 8.1):
+  ```xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <phpunit bootstrap="vendor/autoload.php" colors="true">
+    <testsuites>
+      <testsuite name="unit">
+        <directory>tests/Unit</directory>
+      </testsuite>
+      <testsuite name="database">
+        <directory>tests/Database</directory>
+      </testsuite>
+    </testsuites>
+    <php>
+      <env name="DB_NAME" value="app_test" force="true"/>
+    </php>
+  </phpunit>
+  ```
+  `app_test` se cambia por `<proyecto>_test`. `force="true"` hace que valga aunque el
+  entorno del equipo apunte a otra BD.
+- **La BD de pruebas termina en `_test`** y es distinta de la de desarrollo, porque los tests
+  borran y crean datos. Los tests de `tests/Database/` extienden esta clase, que se detiene
+  si el nombre no termina en `_test`:
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Tests\Database;
+
+  use PHPUnit\Framework\TestCase;
+  use RuntimeException;
+
+  // Base de los tests que tocan la BD: borran y crean datos, así que sólo corren
+  // contra una base de datos de pruebas, cuyo nombre termina en _test.
+  abstract class DatabaseTestCase extends TestCase
+  {
+    public static function setUpBeforeClass(): void
+    {
+      $database = (string) getenv('DB_NAME');
+
+      if (!str_ends_with($database, '_test')) {
+        throw new RuntimeException("DB_NAME debe terminar en _test; es '{$database}'.");
+      }
+    }
+  }
+  ```
+  Para que el freno sirva, el BaseModel toma la BD de `DB_NAME` del entorno, y el cargador
+  del `.env` no sobrescribe una variable que ya existe.
+- **SQLite no sirve como sustituto:** el SQL del §7 (`ON DUPLICATE KEY UPDATE`) es de
+  MySQL/MariaDB.
+- **En la CI corren los dos grupos** (§14), contra un contenedor con el motor de producción
+  (§7.1) y después de aplicar las migraciones (§7.2).
 
 ---
 
@@ -352,9 +487,130 @@ Todas las APIs comparten el mismo contrato. No se inventa uno nuevo por proyecto
   (`blog_posts` → `post_id`); `UNIQUE` en las claves naturales.
 - Timestamps `created_at` / `updated_at`.
 - Catálogo + hechos separados (esquema estrella) cuando haya conteos o series.
-- Upserts idempotentes (`ON DUPLICATE KEY UPDATE`) en lugar de consultar-y-luego-insertar.
+- Upserts idempotentes (`INSERT … ON DUPLICATE KEY UPDATE`, con la forma de cada motor,
+  §7.1) en lugar de consultar-y-luego-insertar.
 - **Nombres de tabla siempre en minúsculas**: MySQL en Windows es insensible a mayúsculas
   y en Linux no. Una tabla `Users` consultada como `users` funciona en Windows y falla en producción.
+- **Columnas `NOT NULL` por defecto;** `NULL` sólo cuando la ausencia del dato significa algo.
+- **Tipos:** fechas en `DATETIME` y en UTC (§7.1), no `TIMESTAMP`, que convierte según la
+  zona de la sesión y en MySQL termina en 2038; dinero en `DECIMAL`, nunca `FLOAT`;
+  booleanos `TINYINT(1)` con prefijo `is_` o `has_` (`is_public`); `deleted_at` sólo si la
+  tabla necesita borrado lógico.
+- **Tablas InnoDB** (claves foráneas y transacciones).
+- **Índices y restricciones:** `uq_<tabla>_<columnas>`, `idx_<tabla>_<columnas>` y
+  `fk_<tabla>_<tabla_referida>` (`uq_user_profiles_user_id`, `fk_user_profiles_users`).
+
+### 7.1 Motor, charset y conexión
+
+- **Motor:** el de producción (MySQL o MariaDB), en una versión LTS con soporte
+  (`endoflife.date/mariadb`, `endoflife.date/mysql`). El mismo motor y versión mayor en
+  local, en la CI y en producción; se declara en el `README.md` y en la imagen de la CI
+  (§14). Como en el §10, este documento no fija el número.
+- **`utf8mb4` + `utf8mb4_unicode_ci`** en la base de datos, las tablas y la conexión. Es la
+  collation común a los dos motores: la de MySQL 8 (`utf8mb4_0900_ai_ci`) no existe en
+  MariaDB, y un respaldo que la use no se puede importar ahí. Además no distingue acentos
+  ni mayúsculas: buscar `jose perez` encuentra "José Pérez".
+- **Upsert según el motor.** MariaDB no acepta el alias de MySQL, y MySQL marcó `VALUES()`
+  como obsoleto:
+  ```sql
+  -- MariaDB (probado)
+  INSERT INTO users (email, full_name) VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
+
+  -- MySQL 8.0.19 o posterior (según su manual)
+  INSERT INTO users (email, full_name) VALUES (?, ?) AS new
+    ON DUPLICATE KEY UPDATE full_name = new.full_name;
+  ```
+- **Conexión en el `BaseModel`** (probada con MariaDB 10.4 y PHP 8.1):
+  ```php
+  $pdo = new PDO(
+    sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', getenv('DB_HOST'), getenv('DB_PORT'), getenv('DB_NAME')),
+    (string) getenv('DB_USER'),
+    (string) getenv('DB_PASS'),
+    [
+      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+      PDO::ATTR_EMULATE_PREPARES => false,
+      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ],
+  );
+  $pdo->exec("SET time_zone = '+00:00'");
+  ```
+  - `charset=utf8mb4` en el DSN: sin él, la conexión usa el charset por defecto del
+    servidor, que puede no ser `utf8mb4`.
+  - Errores como excepciones: así llegan a `BaseController::handle()` (§6).
+  - `EMULATE_PREPARES` en `false`: las consultas preparadas las resuelve el motor, no PHP.
+  - Sesión en UTC: un `DATETIME` guarda la hora tal cual, así que la zona de la sesión que
+    escribe define qué significa. Fijada en UTC, siempre significa lo mismo.
+
+### 7.2 Migraciones
+
+- **Phinx** (`composer require --dev robmorgan/phinx`), con las migraciones en
+  `database/migrations/` y los datos iniciales en `database/seeds/`.
+- **Una migración aplicada nunca se edita:** todo cambio al esquema es una migración nueva.
+  Phinx registra en cada BD cuáles ya se aplicaron (tabla `phinxlog`).
+- **Nombres:** `vendor/bin/phinx create CreateUserProfiles` crea
+  `20261012044204_create_user_profiles.php`, con la fecha en UTC. El archivo en snake_case
+  con una clase en PascalCase es una excepción impuesta por la herramienta (principio 5 del
+  §3). La fecha es la identidad y el orden de la migración, no una versión: nunca se
+  renombra (principio 3).
+- **Cada columna lleva `'null' => false`** salvo que deba aceptar `NULL`: si no se indica,
+  Phinx la crea opcional.
+- **`phinx.php`** en la raíz (probado con Phinx 0.16):
+  ```php
+  <?php
+
+  // Configuración de migraciones: lee la conexión del entorno (§10), nunca del repo.
+  return [
+    'paths' => [
+      'migrations' => __DIR__ . '/database/migrations',
+      'seeds' => __DIR__ . '/database/seeds',
+    ],
+    'environments' => [
+      'default_migration_table' => 'phinxlog',
+      'default_environment' => 'local',
+      'local' => [
+        'adapter' => 'mysql',
+        'host' => getenv('DB_HOST') ?: '127.0.0.1',
+        'port' => (int) (getenv('DB_PORT') ?: 3306),
+        'name' => getenv('DB_NAME'),
+        'user' => getenv('DB_USER'),
+        'pass' => getenv('DB_PASS') ?: '',
+        'charset' => 'utf8mb4',
+        'collation' => 'utf8mb4_unicode_ci',
+      ],
+    ],
+  ];
+  ```
+- **Migración de ejemplo** (probada):
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  use Phinx\Migration\AbstractMigration;
+
+  final class CreateUserProfiles extends AbstractMigration
+  {
+    public function change(): void
+    {
+      $this->table('user_profiles')
+        ->addColumn('user_id', 'integer', ['signed' => false, 'null' => false])
+        ->addColumn('display_name', 'string', ['limit' => 120, 'null' => false])
+        ->addColumn('is_public', 'boolean', ['default' => false, 'null' => false])
+        ->addColumn('created_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP', 'null' => false])
+        ->addColumn('updated_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP', 'update' => 'CURRENT_TIMESTAMP', 'null' => false])
+        ->addIndex(['user_id'], ['unique' => true, 'name' => 'uq_user_profiles_user_id'])
+        ->addForeignKey('user_id', 'users', 'id', ['delete' => 'RESTRICT', 'constraint' => 'fk_user_profiles_users'])
+        ->create();
+    }
+  }
+  ```
+- `vendor/bin/phinx migrate` aplica las pendientes; `vendor/bin/phinx rollback` revierte la
+  última.
+- **Proyectos existentes:** al adoptar Phinx, la primera migración reproduce el esquema
+  actual (lo que había en archivos `.sql` sueltos pasa ahí) y se marca como aplicada, sin
+  ejecutarla, en las BD que ya lo tienen: `vendor/bin/phinx migrate --fake -t <fecha>`.
+  Desde ese punto, todo cambio es una migración.
 
 ## 8. Estilos (CSS)
 
@@ -437,9 +693,11 @@ Este documento no fija números de versión: caducarían. Fija cómo se eligen.
   sin soporte.
 - **Node: la versión LTS activa** (`nodejs.org/en/about/previous-releases`), y nunca menor
   que la que exijan las herramientas del §14 (`neostandard`: `^22.13.0 || >=24`).
-- **La versión se declara en el proyecto,** no aquí: en `composer.json`
-  (`"require": { "php": "^8.4" }`) y, para Node, en `package.json`
-  (`"engines": { "node": ">=22.13" }`).
+- **La versión se declara en el proyecto,** no aquí, en dos niveles:
+  - **La versión que corre** (en local, en la CI y en producción): `.nvmrc` (por ejemplo,
+    `24`) y `.php-version` (por ejemplo, `8.4`) en la raíz. La CI la lee de ahí (§14).
+  - **El rango de compatibilidad:** `"require": { "php": "^8.4" }` en `composer.json` y
+    `"engines": { "node": ">=22.13" }` en `package.json`.
 - **En local se usa la misma versión menor que en producción.** Desarrollar con una versión
   más nueva permite usar sintaxis que el servidor no entiende.
 - **Un proyecto existente en una versión sin parches de seguridad** lo declara en su
@@ -449,7 +707,8 @@ Este documento no fija números de versión: caducarían. Fija cómo se eligen.
 
 Formato: `<tipo>(<ámbito>): <descripción en imperativo>`
 
-Tipos: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `chore`.
+Tipos: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
+`revert`. El hook `commit-msg` lo valida (§14).
 
 - Sí: `feat(auth): agrega recuperación de contraseña` · `fix(map): corrige carga de capas`
 - No: `2026-08-17-6PM` · `cambios` · `update`
@@ -458,7 +717,10 @@ La fecha ya la guarda git; el mensaje debe decir **qué** cambió. Además, al s
 con especificación pública, permite generar changelogs y versionado semántico automáticos.
 
 - `.gitignore` obligatorio: `node_modules/`, `vendor/`, `dist/`, `.env*` con la excepción
-  `!.env.example`, `.php-cs-fixer.cache`, logs, respaldos.
+  `!.env.example`, `.php-cs-fixer.cache`, `.phpunit.cache/`, `.phpunit.result.cache`, logs,
+  respaldos.
+- **`package-lock.json` y `composer.lock` se versionan:** `npm ci` y `composer install`
+  instalan exactamente esas versiones, en local y en la CI.
 - **Sin archivos-respaldo en el repo:** `index 2024-03-15.js`, `main v1.js`, `api_legacy/`.
   Un respaldo es código que ya no se ejecuta; para conservarlo se usa un tag o una rama.
   Si las dos versiones se ejecutan durante una migración, ver `legacy/` en §4.3.
@@ -491,7 +753,17 @@ Un estándar sólo sirve si las excepciones son explícitas. Éstas son las nues
 ## 14. Herramientas que hacen cumplir esto
 
 Un documento no se cumple solo. Lo que un revisor externo comprueba es que el repo
-**valide automáticamente** su convención.
+**valide automáticamente** su convención, en dos niveles:
+
+- **Hooks de git** (en el equipo, antes de cada commit): aviso inmediato, el error no llega
+  a entrar al historial. Se pueden saltar con `--no-verify`.
+- **CI** (en GitHub, después de cada push): la referencia. Corre en Linux, igual para todos,
+  y no se puede saltar. En repositorios privados de GitHub Free no hay ramas protegidas: la
+  CI marca el commit con ✗ y avisa por correo, pero no impide el merge. Por eso los hooks
+  son el primer filtro.
+
+Primero se describen las herramientas de cada lado; los hooks y la CI que las ejecutan van
+al final de esta sección.
 
 ### Frontend — ESLint
 
@@ -642,6 +914,139 @@ alternar entre Windows y el servidor.
 `.editorconfig` controla cómo guarda el editor; `.gitattributes` controla cómo guarda
 git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
 
+### Hooks de git
+
+Dos hooks nativos en `.githooks/`, idénticos en todos los repos y sin dependencias
+(probados con Git para Windows).
+
+`.githooks/pre-commit` ejecuta la revisión de las herramientas que tenga el repo:
+
+```sh
+#!/bin/sh
+# Revisa la convención antes de cada commit (§14). La CI repite la revisión.
+set -e
+if [ -f package.json ]; then npm run lint --silent; fi
+if [ -f composer.json ]; then vendor/bin/php-cs-fixer check; fi
+```
+
+`.githooks/commit-msg` valida Conventional Commits (§11) y acepta los mensajes que genera
+git (`Merge …`, `Revert "…"`, `fixup!`, `squash!`):
+
+```sh
+#!/bin/sh
+# Valida el mensaje con Conventional Commits 1.0.0 (§11).
+first_line=$(head -n 1 "$1")
+case "$first_line" in
+  "Merge "*|"Revert \""*|"fixup! "*|"squash! "*) exit 0 ;;
+esac
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .+'
+if ! printf '%s\n' "$first_line" | grep -Eq "$pattern"; then
+  echo "Mensaje de commit inválido (§11): $first_line" >&2
+  echo "Formato: <tipo>(<ámbito>): <descripción>  ·  Ejemplo: feat(auth): agrega recuperación de contraseña" >&2
+  exit 1
+fi
+```
+
+**Activación automática.** Git no activa hooks al clonar; lo hace la instalación de
+dependencias:
+
+- Frontend, en `package.json`: `"prepare": "git config core.hooksPath .githooks || exit 0"`.
+  `npm install` lo ejecuta.
+- Backend, en `composer.json`:
+  `"scripts": { "post-install-cmd": "git config core.hooksPath .githooks || exit 0" }`.
+  `composer install` lo ejecuta.
+
+El `|| exit 0` evita que la instalación falle en una copia sin git, por ejemplo un ZIP.
+
+- **Permiso de ejecución.** Desde Windows los hooks se guardan sin él, y Linux y macOS los
+  ignoran. Al crearlos: `git update-index --chmod=+x .githooks/pre-commit .githooks/commit-msg`.
+- **`--no-verify` sólo en emergencias.** Salta los hooks, no la CI.
+- **Vue 2 (Vue CLI):** `vue-cli-service lint` corrige archivos por defecto y modificaría el
+  código a mitad del commit. El script `lint` es `vue-cli-service lint --no-fix`.
+- **Backend:** el hook necesita `php` en el PATH del sistema.
+
+### CI (GitHub Actions)
+
+`.github/workflows/ci.yml` en cada repo. Corre en cada push a `main` y en cada pull request,
+en Linux: ahí falla, por ejemplo, un import con el casing mal escrito que en Windows
+funciona (§2). Los workflows siguen el formato documentado de cada acción, pero todavía no
+se han ejecutado en GitHub: se confirman en la primera ejecución.
+
+Frontend:
+
+```yaml
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+```
+
+Backend:
+
+```yaml
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: mariadb:11.4   # el motor y la versión de producción (§7.1)
+        env:
+          MARIADB_ROOT_PASSWORD: ci
+          MARIADB_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: app_test
+      DB_USER: root
+      DB_PASS: ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2   # lee la versión de .php-version
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/php-cs-fixer check --diff
+      - run: vendor/bin/phinx migrate
+      - run: vendor/bin/phpunit
+```
+
+- **Tests:** el frontend corre todos (`npm test`). El backend levanta un contenedor con el
+  motor de producción, aplica las migraciones y corre los grupos `unit` y `database` (§5.3).
+- **La BD de la CI** sólo existe mientras corre el workflow: su contraseña (`ci`) no es un
+  secreto. Con MySQL, la imagen es `mysql:<versión>`, las variables `MYSQL_ROOT_PASSWORD` y
+  `MYSQL_DATABASE`, y la comprobación `mysqladmin ping -h 127.0.0.1`.
+- **El frontend también compila** (`npm run build`): el lint revisa estilo, el build revisa
+  que el proyecto funcione en Linux.
+- **La versión sale del proyecto** (`.nvmrc`, `.php-version`; §10), no del workflow.
+- **`npm ci` y `composer install` instalan lo que dicen los archivos de bloqueo,** que por
+  eso se versionan (§11).
+- **Costo:** gratis en repositorios públicos; 2,000 minutos al mes en privados con GitHub
+  Free, de sobra para lint y build.
+- **No va en la CI** la comprobación del `.env` por URL: necesita el servidor publicado y se
+  hace en cada despliegue.
+
 ---
 
 ## 15. Prohibiciones transversales (resumen)
@@ -670,18 +1075,24 @@ git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
    git no guarda carpetas vacías).
 2. `.gitignore`, `.gitattributes`, `.editorconfig`, `.env.example`, `README.md` y una copia
    idéntica de `CONVENTIONS-GENERAL.md`.
-3. Versiones de runtime declaradas (§10): `require.php` en `composer.json` y `engines.node`
-   en `package.json`.
-4. Frontend: Vue 3 + Vite + Pinia, componentes con Composition API y `<script setup>`, y
+3. Versiones de runtime (§10): `.nvmrc` / `.php-version` con la versión que corre, y
+   `engines.node` / `require.php` con el rango de compatibilidad.
+4. Hooks y CI del §14 desde el primer commit: `.githooks/` (ejecutables y activados por
+   `prepare` o `post-install-cmd`) y `.github/workflows/ci.yml`.
+5. Frontend: Vue 3 + Vite + Pinia, componentes con Composition API y `<script setup>`, y
    desde el día uno el `eslint.config.js` del §14 tal cual, con `neostandard` en versión
    exacta y el script `"lint": "eslint ."`. Si usa Vuetify, sus breakpoints alineados con
    el §8.1.
-5. Backend: PHP-CS-Fixer con `@PER-CS3x0` (§14), **namespaces PSR-4** y **`public/` como raíz web**
+6. Backend: PHP-CS-Fixer con `@PER-CS3x0` (§14), **namespaces PSR-4** y **`public/` como raíz web**
    desde el día uno.
-6. Backend: `Core/` completo (`Router`, `Request`, `Response`, `Cors`, `BaseController` y
+7. Backend: `Core/` completo (`Router`, `Request`, `Response`, `Cors`, `BaseController` y
    `Exceptions/`) antes del primer endpoint.
-7. Frontend: `src/services/` con la URL base desde `VITE_API_SERVER` antes de la primera llamada.
-8. Un `examples.routes.php` + `ExamplesController` + `ExamplesService` como plantilla del contrato.
+8. Frontend: `src/services/` con la URL base desde `VITE_API_SERVER` antes de la primera llamada.
+9. Un `examples.routes.php` + `ExamplesController` + `ExamplesService` como plantilla del contrato.
+10. Tests desde el día uno (§4.5, §5.3): la configuración y un primer test que pase, para
+    que agregar el siguiente sea copiar uno existente.
+11. Backend: base de datos desde el día uno (§7): el `BaseModel` con la conexión del §7.1, y
+    `phinx.php` con una primera migración (§7.2).
 
 ---
 
@@ -689,6 +1100,9 @@ git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.4.0 | 2026-10-11 | Base de datos (§7): columnas `NOT NULL` por defecto, tipos (`DATETIME` en UTC, `DECIMAL`, booleanos `is_`/`has_`), InnoDB y nombres de índices; motor de producción en versión LTS con soporte, `utf8mb4_unicode_ci`, upsert según el motor y conexión PDO del `BaseModel` (§7.1); migraciones con Phinx (§7.2). La CI corre los tests `database` contra un contenedor del motor de producción (§14). |
+| 2.3.0 | 2026-10-11 | Tests: política en el principio 8 del §3 (bug corregido con su test, código nuevo con lógica con tests, sin cobertura obligatoria, no retroactivo); Vitest + `@vue/test-utils` + happy-dom (§4.5); PHPUnit con grupos `unit` y `database` y BD `_test` con freno de seguridad (§5.3); `npm test` y `phpunit --testsuite unit` en la CI (§14). |
+| 2.2.0 | 2026-10-11 | Hooks de git (`pre-commit` con lint, `commit-msg` con Conventional Commits) y CI con GitHub Actions (lint, y build en el frontend) (§14). `.nvmrc` y `.php-version` como versión que corre (§10). Tipos de commit `ci` y `revert`; `package-lock.json` y `composer.lock` se versionan (§11). |
 | 2.1.0 | 2026-10-11 | Responsividad (§8.1): breakpoints de Bootstrap 5 sin `xxl`, mobile first, etiqueta viewport y alineación de Vuetify. Se precisa qué es una versión mayor y una menor ("Cómo se usa este documento"). |
 | 2.0.0 | 2026-10-11 | Documento universal: sin proyectos de origen ni deuda técnica (las excepciones van al `README.md` de cada proyecto). Vue 3 + Vite + Pinia con Composition API y `<script setup>` para proyectos nuevos; Vue 2 queda para existentes (§4.4). Recursos nombrados por su segmento de URL, en plural (§6). Backends nuevos con namespaces PSR-4, carpetas de clases en PascalCase y `public/` como raíz web (§5.2). PER Coding Style con PHP-CS-Fixer en lugar de PSR-12 con PHP_CodeSniffer; `neostandard` para Vue 3 (§14). Datos de la API en snake_case también en el frontend (§4.3). SQL en el Service (§5.2). Versiones de runtime (§10). |
 | 1.x | — | Versión sin numerar: incluía la tabla de proyectos y la deuda técnica por proyecto. |
