@@ -1,6 +1,6 @@
 # Convenciones generales de desarrollo
 
-**Versión 2.4.0** · 2026-10-11 · historial al final del documento
+**Versión 2.7.0** · 2026-10-12 · historial al final del documento
 
 Documento **transversal**: aplica a todos los proyectos, frontend y backend.
 
@@ -53,6 +53,9 @@ por su nombre y consultar su fuente original.
 | Charset de la BD | `utf8mb4` + `utf8mb4_unicode_ci` | **Decisión propia** (común a MySQL y MariaDB, §7.1) | — |
 | Migraciones de BD | **Phinx** | De facto | `phinx.org` |
 | JSON de la API | snake_case | **Decisión propia** (ver §6) | — |
+| HTTP: métodos, códigos y cabeceras | **RFC 9110** (HTTP Semantics) | Formal (IETF) | `rfc-editor.org/rfc/rfc9110` |
+| Token de sesión | **JWT** (RFC 7519) con `firebase/php-jwt`, en cookie `httpOnly` | Formal (IETF) / OWASP | `rfc-editor.org/rfc/rfc7519` · `cheatsheetseries.owasp.org` |
+| Fechas en la API | **ISO 8601** en UTC (`2026-10-11T22:03:00Z`) | Formal (ISO) | `iso.org/iso-8601-date-and-time-format.html` |
 
 Lo que **no** tiene un estándar único y por eso se decide aquí de forma explícita:
 nombres de carpetas, casing del JSON de la API, prefijos de tablas, el nombre de los
@@ -180,7 +183,7 @@ src/
   stores/        un store por dominio (Pinia) · en Vue 2: store/ con index.js + módulos Vuex
   services/      todo el acceso HTTP a la API (axios)
   composables/   lógica compartida entre componentes · en Vue 2: mixins/
-  plugins/       inicialización de librerías (vuetify.js, leaflet.js)
+  plugins/       inicialización de librerías (axios.js, vuetify.js, leaflet.js)
   js/            utilidades puras sin dependencia de Vue
   data/          catálogos y constantes estáticas
 public/          img/, json/, pdf/   (kebab-case)
@@ -214,8 +217,40 @@ tests/           misma estructura que src/; <Nombre>.test.js (§4.5)
   `BarChart.js.js`
   (doble extensión) y `user.settings.json` (punto entre palabras) están mal formados.
 - **Ni vistas ni componentes llaman a `axios` directamente**: usan una función de `src/services/`,
-  nombrada con verbo (`getUsers`, `sendMessage`), con la URL base desde la variable
-  de entorno `<PREFIJO>API_SERVER` (§4.4).
+  nombrada con verbo (`getUsers`, `sendMessage`). Los services usan la instancia `api` de
+  `src/plugins/axios.js`, la única que conoce la URL base (`<PREFIJO>API_SERVER`, §4.4), envía
+  la cookie de sesión y manda al login ante un 401 (§6.2). Probada con Vitest:
+  ```js
+  import axios from 'axios'
+  import router from '@/router'
+
+  // Instancia única para la API: envía la cookie de sesión y manda al login ante un 401.
+  export const api = axios.create({
+    baseURL: import.meta.env.VITE_API_SERVER,
+    withCredentials: true
+  })
+
+  api.interceptors.response.use(
+    response => response,
+    error => {
+      if (error.response?.status === 401) {
+        router.push({ name: 'Login' })
+      }
+      return Promise.reject(error)
+    }
+  )
+  ```
+- **Fechas en hora de México.** La API las entrega en UTC (§6.4) y se muestran con `Intl`,
+  nunca formateando el texto a mano (probado):
+  ```js
+  new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Mexico_City' })
+    .format(new Date(user.created_at)) // '2026-10-11T22:03:00Z' → '11 oct 2026, 4:03 p.m.'
+  ```
+- **Archivos con `FormData`,** enviados por la instancia `api` (`api.post('/padi-solicitudes', formData)`)
+  y sin fijar a mano la cabecera `Content-Type`: el navegador la arma con el separador que
+  necesita. La validación en el navegador (`accept`, tamaño) es sólo comodidad para el
+  usuario; la que cuenta es la del servidor (§5.4). La URL de un archivo es
+  `<PREFIJO>MULTIMEDIA` + la ruta relativa que devuelve la API.
 - **Los datos de la API no se renombran.** Un campo se llama igual en la BD, la API, la
   pestaña Network del navegador y Vue, sin capa de conversión:
   - Se leen y se envían en snake_case: `user.created_at`, `{ created_at: date }`.
@@ -272,8 +307,8 @@ la regla de tests y lo declaran en su `README.md`.
 - **Imports explícitos** (`import { describe, it, expect } from 'vitest'`), sin variables
   globales: así Standard no necesita configuración extra.
 - **Componentes:** se prueba su interfaz pública —props, eventos y slots—, no su estado
-  interno, y sin snapshots (guía de Vue). **Services:** con `axios` simulado
-  (`vi.mock('axios')`).
+  interno, y sin snapshots (guía de Vue). **Services:** con la instancia `api` simulada,
+  `vi.mock('@/plugins/axios', () => ({ api: { get: vi.fn() } }))`.
   ```js
   import { describe, it, expect } from 'vitest'
   import { mount } from '@vue/test-utils'
@@ -332,13 +367,14 @@ api/
 public/             raíz web: la única carpeta que sirve el servidor
   index.php         bootstrap: carga ../.env, ../vendor/autoload.php y las rutas
   .htaccess         redirige a index.php toda petición que no sea un archivo existente
-  multimedia/       archivos subidos; su .htaccess impide ejecutar PHP
+  multimedia/       archivos públicos subidos; su .htaccess impide ejecutar scripts (§5.4)
 tests/              Unit/ (sin BD) y Database/ (BD _test), con la estructura de api/ (§5.3)
 phpunit.xml         grupos unit y database (§5.3)
 database/
   migrations/       migraciones de Phinx (§7.2)
   seeds/            datos iniciales
 phinx.php           configuración de migraciones; lee la conexión del entorno (§7.2)
+storage/            archivos privados subidos, fuera de la raíz web (§5.4)
 composer.json       autoload PSR-4 ("App\\" → "api/") y versión de PHP (require.php, §10)
 vendor/             dependencias de composer, junto a composer.json — nunca se edita
 .env                configuración local, siempre fuera de git
@@ -356,8 +392,8 @@ Las que no contienen clases (`routes/`, `public/`, `multimedia/`) siguen en min�
 repo. Así `.env`, `api/`, `vendor/` y `composer.json` quedan fuera del alcance de una URL
 por construcción, sin depender de que el servidor respete un `.htaccess`.
 
-**Archivos subidos:** `public/multimedia/` nunca ejecuta PHP. Si alguien sube `foto.php` y
-la carpeta lo ejecuta, puede correr código en el servidor.
+**Archivos subidos:** los públicos en `public/multimedia/`, que nunca ejecuta scripts; los
+privados en `storage/`, fuera de la raíz web. Las reglas completas están en §5.4.
 
 **Regla de capas:** `routes → Controller → Service → BaseModel → BD`.
 
@@ -440,29 +476,169 @@ Fuente: `phpunit.de/supported-versions.html`.
 - **En la CI corren los dos grupos** (§14), contra un contenedor con el motor de producción
   (§7.1) y después de aplicar las migraciones (§7.2).
 
+### 5.4 Archivos subidos
+
+Un archivo que sube un usuario es entrada no confiable: el servidor decide qué es, cómo se
+llama y dónde vive.
+
+- **`multipart/form-data`** (`FormData` en el frontend, `$_FILES` en PHP). Base64 dentro del
+  JSON aumenta el tamaño un tercio y carga el archivo entero en memoria: sólo se acepta en
+  proyectos existentes que ya lo usan, declarado en su `README.md`.
+- **El tipo se verifica sobre el contenido** con `finfo`, contra una lista de tipos permitidos
+  por recurso. **La extensión sale del tipo**, nunca del nombre que envía el usuario.
+- **Nombre aleatorio:** `bin2hex(random_bytes(16))` + la extensión. Si hace falta el nombre
+  original, se guarda en una columna de la BD, nunca en la ruta.
+- **Nunca SVG ni HTML** subidos por usuarios: pueden llevar código que corre al abrirlos.
+- **Dónde se guardan:**
+  - Públicos (los puede ver cualquiera): `public/multimedia/<recurso>/`, con el `.htaccess` de
+    abajo.
+  - Privados (requieren sesión): `storage/<recurso>/`, fuera de la raíz web, entregados por un
+    endpoint con `AuthMiddleware`. En un backend existente sin `public/`, una subcarpeta con
+    un `.htaccess` de una sola línea, `Require all denied`.
+- **La BD guarda sólo la ruta que genera el servidor,** relativa a la carpeta base
+  (`padi-solicitudes/7bf34498f38250c2aa37dc6663765354.pdf`). Si una edición no trae archivo
+  nuevo, se conserva la ruta que ya está en la BD: nunca se acepta una ruta enviada por el
+  cliente.
+- **Tamaño:** límite por recurso en el Service, menor que `upload_max_filesize` y
+  `post_max_size` de PHP. Si la petición supera `post_max_size`, PHP descarta el archivo sin
+  avisar: el Core lo detecta y responde 413 (abajo).
+- **Los archivos subidos no se versionan** (§11): son datos, como los registros de la BD, y se
+  respaldan junto con ella.
+- **`Core/FileUpload.php`** (probado con PHP 8.1: archivo válido, tipo no permitido, imagen con
+  nombre `.pdf` guardada como `.png`, tamaño excedido, petición sin archivo, y borrado que no
+  sale de la carpeta). La firma de `ValidationException` es la del Core del proyecto.
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Core;
+
+  use App\Core\Exceptions\ValidationException;
+  use finfo;
+  use RuntimeException;
+
+  // Guarda archivos subidos con multipart/form-data. El servidor decide el tipo (por el
+  // contenido), la extensión y el nombre; devuelve la ruta relativa, lo único que se guarda
+  // en la BD (§5.4).
+  final class FileUpload
+  {
+    private const EXTENSIONS = [
+      'application/pdf' => 'pdf',
+      'image/jpeg' => 'jpg',
+      'image/png' => 'png',
+      'image/webp' => 'webp',
+    ];
+
+    /** @param list<string> $allowedTypes tipos MIME permitidos para este recurso */
+    public static function save(string $field, string $baseDir, string $subdir, array $allowedTypes, int $maxBytes): string
+    {
+      $file = $_FILES[$field] ?? null;
+
+      if ($file === null || $file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        throw new ValidationException([$field => 'Adjunta un archivo.']);
+      }
+      if ($file['size'] > $maxBytes) {
+        throw new ValidationException([$field => 'El archivo supera el tamaño máximo.']);
+      }
+
+      $type = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+      if (!in_array($type, $allowedTypes, true) || !isset(self::EXTENSIONS[$type])) {
+        throw new ValidationException([$field => 'Tipo de archivo no permitido.']);
+      }
+
+      $dir = $baseDir . '/' . $subdir;
+      if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+        throw new RuntimeException("No se pudo crear {$dir}.");
+      }
+
+      $name = bin2hex(random_bytes(16)) . '.' . self::EXTENSIONS[$type];
+      if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) {
+        throw new RuntimeException('No se pudo guardar el archivo.');
+      }
+
+      return $subdir . '/' . $name;
+    }
+
+    // Borra un archivo por su ruta relativa sólo si, resuelta, queda dentro de $baseDir.
+    public static function delete(?string $relativePath, string $baseDir): void
+    {
+      if ($relativePath === null || trim($relativePath) === '') {
+        return;
+      }
+
+      $dir = realpath($baseDir);
+      $full = $dir !== false ? realpath($dir . DIRECTORY_SEPARATOR . ltrim($relativePath, '/\\')) : false;
+      if ($dir === false || $full === false || strncmp($full, $dir . DIRECTORY_SEPARATOR, strlen($dir) + 1) !== 0) {
+        return;
+      }
+
+      if (is_file($full)) {
+        unlink($full);
+      }
+    }
+  }
+  ```
+  Uso en un Service, con la carpeta y los tipos fijos en el código (`$subdir` nunca sale de la
+  petición):
+  ```php
+  $path = FileUpload::save('pdf', MULTIMEDIA_DIR, 'padi-solicitudes', ['application/pdf'], 10 * 1024 * 1024);
+  ```
+- **Petición mayor que `post_max_size`**, en el Core antes del router (probado; sólo aplica a
+  `multipart`, porque PHP tampoco llena `$_POST` con una petición JSON normal):
+  ```php
+  $isMultipart = str_starts_with($_SERVER['CONTENT_TYPE'] ?? '', 'multipart/form-data');
+  if ($isMultipart && $_POST === [] && $_FILES === [] && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    // → 413 'El archivo es demasiado grande.'
+  }
+  ```
+- **`.htaccess` de `multimedia/`** (probado en Apache 2.4 con PHP 8.1: `.php`, `.phtml` y `.PHP`
+  responden 403, el listado de la carpeta 403 y una imagen 200; y con sólo `engine off`, un
+  `.php` no se ejecuta):
+  ```apache
+  # Archivos subidos: nunca se ejecutan ni se listan (§5.4).
+  Options -Indexes
+
+  <FilesMatch "(?i)\.(php[0-9]?|phtml|phar|pl|py|cgi|sh|asp|aspx|exe)$">
+    Require all denied
+  </FilesMatch>
+
+  <IfModule mod_php.c>
+    php_flag engine off
+  </IfModule>
+  ```
+  Son dos capas: `FilesMatch` niega las extensiones ejecutables, y `php_flag engine off` apaga
+  PHP en la carpeta aunque alguna extensión se escapara de la lista.
+
 ---
 
 ## 6. Contrato de API
 
-Todas las APIs comparten el mismo contrato. No se inventa uno nuevo por proyecto.
+Todas las APIs comparten el mismo contrato. No se inventa uno nuevo por proyecto. Una API
+existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en lugar de
+`/users/7`) lo declara en su `README.md`.
 
 **Envoltura de respuesta** (`Core/Response.php`): toda respuesta lleva `status`, `success` y
-`message`. El éxito agrega `result` (y `total` en listas); un error de validación (422) agrega
-`errors` con el detalle por campo:
+`message`. El éxito agrega `result`; una lista paginada agrega `total`, `page` y `per_page`
+(§6.3); un error de validación (422) agrega `errors` con el detalle por campo:
 
 ```json
-{ "status": 200, "success": true,  "message": "OK", "total": 3, "result": [] }
-{ "status": 422, "success": false, "message": "...", "errors": { "email": "requerido" } }
+{ "status": 200, "success": true,  "message": "OK", "total": 25, "page": 1, "per_page": 20, "result": [] }
+{ "status": 422, "success": false, "message": "Revisa los datos marcados.", "errors": { "email": "Ya existe una cuenta con este correo." } }
 ```
 
+- **`status` es siempre el código HTTP de la respuesta,** y `success` es `true` sólo con un
+  código 2xx. Nunca un 200 con `"success": false`: el navegador, axios y la CI leen el código
+  HTTP, no el cuerpo.
+- **`message` y los valores de `errors` van en español,** redactados para mostrarse al
+  usuario tal cual. Las claves de `errors` son los nombres de campo de la petición.
 - Campos JSON en **snake_case**. (Decisión propia: no hay estándar único — la guía de Google
   recomienda camelCase, mientras que Stripe y la API v3 de GitHub usan snake_case.
   Se elige snake_case por coherencia con las columnas de la BD.) El frontend los usa tal
   cual (§4.3).
-- **Un recurso = un endpoint = un archivo de rutas = un controlador = un servicio.**
+- **Un recurso = una URL base = un archivo de rutas = un controlador = un servicio.**
 - **Sub-operaciones por query param `type`**, no por endpoints nuevos:
   `GET /visits?type=summary`. Un `type` no reconocido responde `400`.
-- **Métodos del controlador según verbo HTTP:** `get()`, `post()`, `put()`, `delete()`.
 - **El nombre del recurso es su segmento de URL.** Entre capas sólo cambia el casing, nunca
   el número ni el idioma:
   `/user-profiles` → `user-profiles.routes.php` → `UserProfilesController` → `UserProfilesService`
@@ -470,13 +646,144 @@ Todas las APIs comparten el mismo contrato. No se inventa uno nuevo por proyecto
   `/auth` → `AuthController`; `/curp` → `CURPService` (siglas, principio 7 del §3).
 - **URLs de la API en inglés y kebab-case.** La API la consume código, así que sus URLs siguen
   a los identificadores. El español queda para las URLs del frontend, que ve el usuario.
-- **Códigos:** `200` OK · `201` creado · `400` inválida · `401` sin autenticar ·
-  `403` sin permiso · `404` no encontrado · `422` validación · `500` error interno.
 - **Errores** siempre vía excepciones tipadas capturadas en `BaseController::handle()`.
   `ValidationException` y `ApiException` se muestran; `DatabaseException` y `Throwable`
   se registran en log y devuelven mensaje genérico. **Nunca** exponer SQL ni stack traces.
 - **SQL siempre preparado** (`?` + arreglo). Nunca concatenar entrada del usuario.
 - **`declare(strict_types=1);`** al inicio de cada servicio y modelo nuevo.
+
+### 6.1 Recursos, métodos y códigos
+
+- **Colección y elemento:** `/users` es la colección y `/users/{id}`, un elemento. Las dos
+  rutas viven en el mismo `users.routes.php`.
+- **Métodos:**
+
+  | Método | Uso | Respuesta | Controlador |
+  |---|---|---|---|
+  | `GET` | Leer la colección o un elemento | 200 | `get()` |
+  | `POST` | Crear | 201, con el elemento creado en `result` | `post()` |
+  | `PATCH` | Actualizar sólo los campos enviados (el caso normal) | 200 | `patch()` |
+  | `PUT` | Reemplazar el elemento completo | 200 | `put()` |
+  | `DELETE` | Borrar | 200 con la envoltura (no 204: toda respuesta lleva cuerpo) | `delete()` |
+
+- **Códigos:** `200` OK · `201` creado · `204` sólo en el preflight de CORS (§6.5) ·
+  `400` petición mal formada (parámetros inválidos, `type` desconocido) · `401` sin sesión o
+  con la sesión vencida · `403` con sesión pero sin permiso · `404` no encontrado ·
+  `405` método no permitido · `409` conflicto (una clave `UNIQUE` repetida, como un correo ya
+  registrado) · `422` validación de campos · `500` error interno.
+- **Un 405 lleva la cabecera `Allow`** con los métodos que sí acepta el recurso
+  (`Allow: GET, POST`): la exige la norma HTTP (RFC 9110).
+- **Con Bearer (§6.2), el 401 lleva `WWW-Authenticate: Bearer`.** Con cookie no hay un esquema
+  registrado para esa cabecera.
+
+### 6.2 Autenticación
+
+- **Token JWT en una cookie `httpOnly`** cuando el frontend y la API comparten sitio (el mismo
+  dominio, aunque cambien el subdominio o el puerto). JavaScript no puede leer esa cookie, así
+  que un script inyectado (XSS) no puede robar la sesión; OWASP desaconseja guardar el token
+  en `localStorage`. Una API que consumen clientes que no son navegador (apps, scripts) usa
+  `Authorization: Bearer <token>` y lo declara en su `README.md`.
+- **Librería:** `firebase/php-jwt` (`composer require firebase/php-jwt`), algoritmo HS256.
+- **`JWT_SECRET` de al menos 256 bits** (§10); la librería rechaza claves más cortas. Se
+  genera con `php -r "echo bin2hex(random_bytes(32));"`.
+- **Claims obligatorios:** `sub` (id del usuario), `iat` y `exp`. La duración sale de
+  `JWT_TTL`, en segundos, con un máximo de 8 horas (una jornada). Cualquiera puede decodificar
+  un JWT y leer su contenido: nunca lleva datos sensibles.
+- **Emitir**, al iniciar sesión (probado con php-jwt 7 y PHP 8.1):
+  ```php
+  $now = time();
+  $ttl = (int) getenv('JWT_TTL');
+  $token = JWT::encode(['sub' => $userId, 'iat' => $now, 'exp' => $now + $ttl], (string) getenv('JWT_SECRET'), 'HS256');
+  setcookie('access_token', $token, [
+    'expires' => $now + $ttl,
+    'path' => '/',
+    'secure' => true,
+    'httponly' => true,
+    'samesite' => 'Strict',
+  ]);
+  ```
+- **Verificar**, en el `AuthMiddleware` (probado). Un token ausente, alterado o vencido recibe
+  el mismo trato:
+  ```php
+  try {
+    $claims = JWT::decode($_COOKIE['access_token'] ?? '', new Key((string) getenv('JWT_SECRET'), 'HS256'));
+  } catch (UnexpectedValueException | DomainException $e) {
+    // → 401 'Inicia sesión para continuar.'
+  }
+  ```
+- **Cerrar sesión:** el mismo `setcookie` con `'expires' => 1`, que hace que el navegador la
+  borre.
+- `'secure' => true` también funciona en `http://localhost`, que los navegadores tratan como
+  contexto seguro (no probado aquí: requiere un navegador).
+- En el frontend, el envío de la cookie y la redirección al login ante un 401 van en
+  `src/plugins/axios.js` (§4.3).
+
+### 6.3 Paginación
+
+- **`?page=1&per_page=20`:** `page` desde 1, y `per_page` entre 1 y 100 (20 si no se envía). Un
+  valor fuera de rango responde 400:
+  ```php
+  $page = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+  $perPage = filter_var($_GET['per_page'] ?? 20, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 100]]);
+  // false en cualquiera de los dos → 400
+  ```
+- **`total` es el número de registros que cumplen el filtro en todas las páginas,** no los de
+  la página actual. El frontend calcula las páginas con `Math.ceil(total / per_page)`.
+- **SQL** (probado con MariaDB y `EMULATE_PREPARES` en `false`): un `COUNT(*)` con el mismo
+  filtro, y la consulta con `LIMIT ? OFFSET ?` y `($page - 1) * $perPage` como desplazamiento.
+- **Los catálogos chicos** (estados, tipos) no se paginan: devuelven todo, con `total` igual a
+  su conteo y sin `page` ni `per_page`.
+
+### 6.4 Fechas
+
+- **Fecha y hora: ISO 8601 en UTC, con `Z`** (`2026-10-11T22:03:00Z`). La BD las guarda en UTC
+  (§7.1) y el Service las formatea en el propio SQL, igual en MySQL que en MariaDB (probado):
+  `DATE_FORMAT(created_at, '%Y-%m-%dT%TZ') AS created_at`.
+- **Sólo fecha** (nacimiento, vigencia): `YYYY-MM-DD`, sin zona.
+- **Sin la `Z`, la hora se desplaza:** el navegador interpreta `2026-10-11 22:03:00` como hora
+  local del equipo.
+- **Al recibir,** el backend acepta ISO 8601 con zona (`date.toISOString()` del frontend da
+  `…T22:03:00.000Z`) y la convierte a UTC antes de guardarla (probado):
+  `(new DateTimeImmutable($input))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s')`.
+- **El frontend la muestra en hora de México** con `Intl` (§4.3).
+
+### 6.5 CORS
+
+- **Orígenes permitidos en `CORS_ALLOWED_ORIGINS`** (§10), separados por comas. En la API,
+  nunca `*`, que además el navegador rechaza cuando la petición lleva credenciales.
+- **`Core/Cors`** (probado):
+  ```php
+  $allowed = array_map('trim', explode(',', (string) getenv('CORS_ALLOWED_ORIGINS')));
+  $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+  if (in_array($origin, $allowed, true)) {
+    header("Access-Control-Allow-Origin: {$origin}");
+    header('Access-Control-Allow-Credentials: true');
+    header('Vary: Origin');
+  }
+
+  if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE');
+    header('Access-Control-Allow-Headers: Content-Type');
+    http_response_code(204);
+    exit;
+  }
+  ```
+- **El preflight `OPTIONS` responde 204 sin cuerpo:** es la única respuesta sin envoltura.
+- **CORS no es control de acceso:** a un origen no permitido el servidor igual responde, sólo
+  que sin esas cabeceras, y es el navegador el que bloquea la lectura. Lo que protege los
+  datos es la autenticación (§6.2).
+- **Archivos públicos** (`public/multimedia/`, §5.4): pueden llevar `*`, porque son de sólo
+  lectura y no usan credenciales. Sólo hace falta si el frontend los lee desde otro origen
+  con `fetch`, un `canvas` o un visor de PDF; para `<img>` o `<a>` no se necesita. Nunca en
+  `storage/` ni en nada que requiera sesión. Se agrega al `.htaccess` de `multimedia/`
+  (probado en Apache 2.4: la cabecera sale en los archivos públicos que se entregan, no en
+  los bloqueados ni en los privados):
+  ```apache
+  <IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+  </IfModule>
+  ```
 
 ## 7. Base de datos
 
@@ -656,13 +963,25 @@ horizontal, en `md`.
   `<meta name="viewport" content="width=device-width, initial-scale=1">`. Sin ella, el móvil
   simula una pantalla de unos 980px y ningún breakpoint de móvil se activa. Vite y Vue CLI la
   incluyen en su plantilla: no se borra.
-- **Vuetify se alinea con estos breakpoints.** Sus valores por defecto son otros (en la
-  versión actual, 600, 840, 1145, 1545 y 2138px); sin ajustarlos, sus columnas (`cols`, `md`…)
-  y `useDisplay()` cambian en anchos distintos que el CSS. En Vue 3 (no probado):
-  ```js
-  createVuetify({ display: { thresholds: { sm: 576, md: 768, lg: 992, xl: 1200 } } })
-  ```
-  Vuetify 2 se configura de otra forma: se verifica en cada proyecto.
+- **Vuetify se alinea con estos breakpoints.** Sus valores por defecto son otros (Vuetify 4:
+  600, 840, 1145, 1545 y 2138 px; Vuetify 3: 600, 960, 1280, 1920 y 2560 px); sin ajustarlos,
+  sus columnas (`cols`, `md`…) y `useDisplay()` cambian en anchos distintos que el CSS.
+  - **Vue 3** (Vuetify 3 y 4). Cada valor es donde **empieza** ese tamaño:
+    ```js
+    createVuetify({ display: { thresholds: { sm: 576, md: 768, lg: 992, xl: 1200 } } })
+    ```
+    Vuetify tiene además `xxl` (desde 2560 px en Vuetify 3, desde 2138 px en Vuetify 4), que
+    esta convención no usa: queda dentro de `xl`, y las columnas `xl` se aplican igual.
+  - **Vue 2** (Vuetify 2). Cada valor es donde **termina** ese tamaño, y hace falta
+    `scrollBarWidth: 0`:
+    ```js
+    new Vuetify({ breakpoint: { thresholds: { xs: 576, sm: 768, md: 992, lg: 1200 }, scrollBarWidth: 0 } })
+    ```
+    Sin `scrollBarWidth: 0`, Vuetify 2 resta 16 px a los límites de `md` y `lg`, y entre 976 y
+    991 px, y entre 1184 y 1199 px, dice un tamaño distinto que el CSS.
+  - Probado ejecutando el cálculo de breakpoints de Vuetify 2.7, 3.13 y 4.2 en los anchos de
+    frontera (575, 576, 767, 768, 975, 976, 991, 992, 1183, 1184, 1199, 1200 px), no en un
+    navegador.
 
 ## 9. Assets estáticos
 
@@ -677,8 +996,18 @@ horizontal, en `md`.
 - Frontend: prefijo obligatorio `VITE_` (Vue 3) o `VUE_APP_` (Vue 2). El build sólo expone al
   bundle las variables con ese prefijo; por lo mismo, **ningún secreto** lleva ese prefijo:
   todo lo que entra al bundle lo puede leer cualquier visitante.
-- Backend: `.env` con `API_BASE_PATH`, `DB_*`, `JWT_*`, `MAIL_*`.
-- `.env` y sus respaldos (`.env.*.bak`) **fuera de git**; se versiona sólo `.env.example`.
+- Backend: `.env` con `API_BASE_PATH`, `DB_*`, `MAIL_*` y:
+  - `JWT_SECRET`: al menos 256 bits, generado con `php -r "echo bin2hex(random_bytes(32));"`
+    y distinto en cada entorno (§6.2).
+  - `JWT_TTL`: duración de la sesión en segundos, máximo 28800 (8 horas).
+  - `CORS_ALLOWED_ORIGINS`: orígenes del frontend separados por comas (§6.5).
+- **Backend:** `.env` y sus respaldos (`.env.*.bak`) **fuera de git**, porque tienen secretos;
+  se versiona sólo `.env.example`.
+- **Frontend:** los archivos de cada modo (`.env.development`, `.env.production`) **se
+  versionan**: por la regla de arriba sólo contienen valores públicos, y la CI los necesita
+  para compilar. Los `*.local` (`.env.local`, `.env.production.local`) son los ajustes
+  personales de cada equipo y quedan fuera de git. Un valor que no se puede publicar no va
+  en el frontend.
 - `.env` **nunca dentro de la raíz web** (§5.2): lo que está ahí se puede pedir por URL.
 - Ningún secreto ni cadena de conexión en el repositorio.
 
@@ -716,9 +1045,11 @@ Tipos: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`
 La fecha ya la guarda git; el mensaje debe decir **qué** cambió. Además, al ser un formato
 con especificación pública, permite generar changelogs y versionado semántico automáticos.
 
-- `.gitignore` obligatorio: `node_modules/`, `vendor/`, `dist/`, `.env*` con la excepción
-  `!.env.example`, `.php-cs-fixer.cache`, `.phpunit.cache/`, `.phpunit.result.cache`, logs,
-  respaldos.
+- `.gitignore` obligatorio: `node_modules/`, `vendor/`, `dist/`, `.php-cs-fixer.cache`,
+  `.phpunit.cache/`, `.phpunit.result.cache`, logs y respaldos. Además:
+  - Backend: `.env*` con la excepción `!.env.example`, y los archivos subidos (§5.4):
+    `public/multimedia/**` con la excepción `!public/multimedia/.htaccess`, y `storage/`.
+  - Frontend: `*.local` (§10).
 - **`package-lock.json` y `composer.lock` se versionan:** `npm ci` y `composer install`
   instalan exactamente esas versiones, en local y en la CI.
 - **Sin archivos-respaldo en el repo:** `index 2024-03-15.js`, `main v1.js`, `api_legacy/`.
@@ -916,18 +1247,26 @@ git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
 
 ### Hooks de git
 
-Dos hooks nativos en `.githooks/`, idénticos en todos los repos y sin dependencias
-(probados con Git para Windows).
+Dos hooks nativos en `.githooks/`, en la raíz del repo, idénticos en todos los repos y sin
+dependencias (probados con Git para Windows).
 
-`.githooks/pre-commit` ejecuta la revisión de las herramientas que tenga el repo:
+`.githooks/pre-commit` ejecuta la revisión de las herramientas que tenga el proyecto, ya sea
+que viva en la raíz del repo o en una carpeta de primer nivel (`vue2/`, `api/`):
 
 ```sh
 #!/bin/sh
 # Revisa la convención antes de cada commit (§14). La CI repite la revisión.
+# Busca el proyecto en la raíz del repo y en sus carpetas de primer nivel (vue2/, api/).
 set -e
-if [ -f package.json ]; then npm run lint --silent; fi
-if [ -f composer.json ]; then vendor/bin/php-cs-fixer check; fi
+for dir in . */; do
+  if [ -f "$dir/package.json" ]; then (cd "$dir" && npm run lint --silent); fi
+  if [ -f "$dir/composer.json" ]; then (cd "$dir" && vendor/bin/php-cs-fixer check); fi
+done
 ```
+
+Probado con el proyecto en la raíz, en `vue2/` y en `api/`, con el lint pasando y fallando:
+bloquea el commit cuando falla. Un hook que sólo buscara en la raíz aceptaría todo en
+silencio en un proyecto dentro de una subcarpeta.
 
 `.githooks/commit-msg` valida Conventional Commits (§11) y acepta los mensajes que genera
 git (`Merge …`, `Revert "…"`, `fixup!`, `squash!`):
@@ -1047,6 +1386,34 @@ jobs:
 - **No va en la CI** la comprobación del `.env` por URL: necesita el servidor publicado y se
   hace en cada despliegue.
 
+**Proyecto en una subcarpeta del repo** (por ejemplo, el frontend en `vue2/`):
+
+- Los hooks no cambian: `.githooks/` va en la raíz del repo, y el `prepare` del
+  `package.json` de `vue2/` los activa igual (probado, también con commits hechos desde la
+  subcarpeta).
+- En la CI, `defaults.run.working-directory` cubre los pasos `run`, pero no los `uses`: las
+  acciones reciben la ruta completa (no probado en GitHub):
+  ```yaml
+  jobs:
+    frontend:
+      runs-on: ubuntu-latest
+      defaults:
+        run:
+          working-directory: vue2
+      steps:
+        - uses: actions/checkout@v7
+        - uses: actions/setup-node@v7
+          with:
+            node-version-file: vue2/.nvmrc
+            cache: npm
+            cache-dependency-path: vue2/package-lock.json
+        - run: npm ci
+        - run: npm run lint
+        - run: npm test
+        - run: npm run build
+  ```
+  Para un backend con `composer.json` dentro de `api/`, igual: `working-directory: api`.
+
 ---
 
 ## 15. Prohibiciones transversales (resumen)
@@ -1066,8 +1433,17 @@ jobs:
 | `axios` en una vista o componente | Función en `src/services/` |
 | SQL en un controlador | En el `Service` correspondiente |
 | Exponer errores internos en la respuesta | Log + mensaje genérico |
+| HTTP 200 con `"success": false` | El código HTTP real en `status` (§6) |
+| Token de sesión en `localStorage` | Cookie `httpOnly` (§6.2) |
+| Fechas sin zona en la API (`2026-10-11 22:03:00`) | ISO 8601 en UTC con `Z` (§6.4) |
+| CORS con `*` en la API | Orígenes en `CORS_ALLOWED_ORIGINS` (§6.5) |
+| Guardar un archivo subido con la extensión o el nombre que envió el usuario | Nombre aleatorio y extensión según el tipo real (§5.4) |
+| Guardar en la BD una ruta de archivo enviada por el cliente | Sólo la ruta que genera el servidor (§5.4) |
+| Aceptar SVG o HTML subidos por usuarios | PDF o imágenes, según la lista del recurso (§5.4) |
+| Versionar archivos subidos | `.gitignore` de §11; se respaldan con la BD |
 | `?>` al cierre de un archivo PHP | Omitirlo (PER-CS) |
-| `.env` o respaldos en git | `.env.example` |
+| `.env` del backend, o sus respaldos, en git | `.env.example` (§10) |
+| Un secreto en el `.env` del frontend | Si no se puede publicar, no va en el frontend (§10) |
 
 ## 16. Checklist para un proyecto nuevo
 
@@ -1093,6 +1469,10 @@ jobs:
     que agregar el siguiente sea copiar uno existente.
 11. Backend: base de datos desde el día uno (§7): el `BaseModel` con la conexión del §7.1, y
     `phinx.php` con una primera migración (§7.2).
+12. Sesión y CORS antes del primer endpoint protegido: `AuthMiddleware` con la cookie del
+    §6.2 y `Core/Cors` del §6.5 en el backend; `src/plugins/axios.js` del §4.3 en el frontend.
+13. Antes del primer endpoint que reciba archivos (§5.4): `Core/FileUpload.php`, la detección
+    del 413 en el Core y el `.htaccess` de `public/multimedia/`.
 
 ---
 
@@ -1100,6 +1480,9 @@ jobs:
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.7.0 | 2026-10-12 | El frontend versiona sus `.env.[modo]` (sólo valores públicos) e ignora `*.local`; el backend sigue igual (§10, §11). Vuetify: valores por defecto de las versiones 3 y 4, ejemplo de Vue 3 probado y ejemplo de Vue 2 con `scrollBarWidth: 0` (§8.1). CORS `*` prohibido en la API y permitido en archivos públicos (§6.5). `pre-commit` que encuentra el proyecto en la raíz o en una carpeta de primer nivel, y CI para proyectos en subcarpeta (§14). |
+| 2.6.0 | 2026-10-12 | Archivos subidos (§5.4): `multipart/form-data`; tipo verificado con `finfo` y extensión según el tipo; nombre aleatorio; sin SVG ni HTML; públicos en `public/multimedia/` sin ejecución de scripts y privados en `storage/`; la BD guarda sólo la ruta del servidor; 413 si se supera `post_max_size`; borrado contenido con `realpath()`; los archivos subidos no se versionan (§11). Frontend con `FormData` (§4.3). |
+| 2.5.0 | 2026-10-11 | Contrato de API (§6): `status` igual al código HTTP; mensajes en español para el usuario; `/users/{id}`, `PATCH`, 405 con `Allow` y 409 (§6.1); JWT de `firebase/php-jwt` en cookie `httpOnly` (§6.2); paginación con `page`/`per_page` y `total` de todas las páginas (§6.3); fechas ISO 8601 en UTC (§6.4); CORS con orígenes declarados (§6.5). Frontend: instancia `api` en `src/plugins/axios.js` y fechas con `Intl` (§4.3). |
 | 2.4.0 | 2026-10-11 | Base de datos (§7): columnas `NOT NULL` por defecto, tipos (`DATETIME` en UTC, `DECIMAL`, booleanos `is_`/`has_`), InnoDB y nombres de índices; motor de producción en versión LTS con soporte, `utf8mb4_unicode_ci`, upsert según el motor y conexión PDO del `BaseModel` (§7.1); migraciones con Phinx (§7.2). La CI corre los tests `database` contra un contenedor del motor de producción (§14). |
 | 2.3.0 | 2026-10-11 | Tests: política en el principio 8 del §3 (bug corregido con su test, código nuevo con lógica con tests, sin cobertura obligatoria, no retroactivo); Vitest + `@vue/test-utils` + happy-dom (§4.5); PHPUnit con grupos `unit` y `database` y BD `_test` con freno de seguridad (§5.3); `npm test` y `phpunit --testsuite unit` en la CI (§14). |
 | 2.2.0 | 2026-10-11 | Hooks de git (`pre-commit` con lint, `commit-msg` con Conventional Commits) y CI con GitHub Actions (lint, y build en el frontend) (§14). `.nvmrc` y `.php-version` como versión que corre (§10). Tipos de commit `ci` y `revert`; `package-lock.json` y `composer.lock` se versionan (§11). |
