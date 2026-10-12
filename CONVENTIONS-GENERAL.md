@@ -1,6 +1,6 @@
 # Convenciones generales de desarrollo
 
-**Versión 2.8.0** · 2026-10-12 · historial al final del documento
+**Versión 3.0.0** · 2026-10-12 · historial al final del documento
 
 Documento **transversal**: aplica a todos los proyectos, frontend y backend.
 
@@ -38,7 +38,7 @@ por su nombre y consultar su fuente original.
 | Ámbito | Estándar adoptado | Tipo | Fuente |
 |---|---|---|---|
 | Componentes y plantillas Vue | **Vue.js Style Guide** (prioridades A, B y C) | Oficial del framework | `vuejs.org/style-guide/` (Vue 3) · `v2.vuejs.org/v2/style-guide/` (Vue 2) |
-| JavaScript | **JavaScript Standard Style** (Vue 3: vía `neostandard`; Vue 2: vía `@vue/standard`) | De facto | `standardjs.com` · `github.com/neostandard/neostandard` |
+| JavaScript | **JavaScript Standard Style** (vía `neostandard`; Vue 2 con Vue CLI: vía `@vue/standard`, §14) | De facto | `standardjs.com` · `github.com/neostandard/neostandard` |
 | JavaScript — nombres de constantes | **Google JavaScript Style Guide §6.2.5** (sólo esta regla; el resto del formato es Standard) | De facto | `google.github.io/styleguide/jsguide.html` |
 | PHP — nombres y estructura | **PSR-1** (Basic Coding Standard) | Formal (PHP-FIG) | `www.php-fig.org/psr/psr-1/` |
 | PHP — formato | **PER Coding Style 3.0** (extiende y reemplaza a PSR-12; es la versión que aplica PHP-CS-Fixer con `@PER-CS3x0`, §14) | Formal (PHP-FIG) | `www.php-fig.org/per/coding-style/` |
@@ -54,7 +54,7 @@ por su nombre y consultar su fuente original.
 | Migraciones de BD | **Phinx** | De facto | `phinx.org` |
 | JSON de la API | snake_case | **Decisión propia** (ver §6) | — |
 | HTTP: métodos, códigos y cabeceras | **RFC 9110** (HTTP Semantics) | Formal (IETF) | `rfc-editor.org/rfc/rfc9110` |
-| Token de sesión | **JWT** (RFC 7519) con `firebase/php-jwt`, en cookie `httpOnly` | Formal (IETF) / OWASP | `rfc-editor.org/rfc/rfc7519` · `cheatsheetseries.owasp.org` |
+| Sesión | **JWT** (RFC 7519) de vida corta con `firebase/php-jwt` + token de renovación de un solo uso, ambos en cookies `httpOnly` | Formal (IETF) / OWASP | `rfc-editor.org/rfc/rfc7519` · `cheatsheetseries.owasp.org` |
 | Fechas en la API | **ISO 8601** en UTC (`2026-10-11T22:03:00Z`) | Formal (ISO) | `iso.org/iso-8601-date-and-time-format.html` |
 | Contraseñas | **NIST SP 800-63B-4** | Formal (NIST) | `pages.nist.gov/800-63-4/sp800-63b.html` |
 | Cabeceras de seguridad de la API | **OWASP REST Security Cheat Sheet** | De facto (OWASP) | `cheatsheetseries.owasp.org` |
@@ -103,14 +103,16 @@ Dos consecuencias prácticas que no son estéticas:
 4. **Sin ruido.** Un sufijo de tipo (`View`, `Service`, `Controller`…) se usa sólo cuando el
    nombre sale de su carpeta —en un `import`, un `use` o una traza de error— y ahí podría
    confundirse con otro del mismo nombre base: `UsersView`, `usersService`, `UsersController`
-   y `UsersService` conviven en el mismo código. Si no hay con qué confundirlo, el sufijo es ruido:
-   `Comp` (casi todo en Vue es un componente) o `store` dentro de `stores/`.
+   y `UsersService` conviven en el mismo código. Si no hay con qué confundirlo, la marca de tipo
+   es ruido, como prefijo o como sufijo: `Comp` (casi todo en Vue es un componente) o `store`
+   dentro de `stores/` (`storeNotifications.js`, `notificationsStore.js`).
 5. **ASCII, minúsculas y guiones** en carpetas, URLs y assets. Sin espacios, acentos ni `ñ`.
    Los archivos de código siguen el casing de lo que definen (§4.1, §5.1): `UserCard.vue`,
    `UsersController.php`, `visitTracker.js`. También en ASCII, sin espacios ni acentos.
    Única excepción en carpetas: las que contienen clases PHP con namespace van en
    PascalCase (`Controllers/`), porque PSR-4 las exige así (§5.2). Única excepción en
-   archivos: las migraciones siguen el formato que impone Phinx (§7.2).
+   archivos: los nombres que impone una herramienta, como las migraciones de Phinx (§7.2), los
+   hooks de git (`pre-commit`) o los archivos de configuración (`phpunit.xml`, `vite.config.js`).
 6. **Idioma:** identificadores y URLs de la API en **inglés**; textos de UI, URLs del frontend y nombres oficiales
    del dominio (siglas como CURP o RFC, figuras legales como `consejos-regionales`) en **español**.
    Los nombres de carpetas y archivos son identificadores: van en inglés (`period-2019-2024/`),
@@ -128,7 +130,8 @@ Dos consecuencias prácticas que no son estéticas:
 9. **Un control que no se probó no existe.** Todo hook, paso de la CI, regla de `.htaccess` o
    escáner se prueba al crearlo o cambiarlo con un caso que **debe** fallar, y falla en voz
    alta: nada de `2>/dev/null` ni `|| true` que oculten errores. Un control que dice "limpio"
-   sin haber revisado nada es peor que no tenerlo.
+   sin haber revisado nada es peor que no tenerlo. Ejemplo: `grep` termina con 1 cuando no
+   encuentra nada y con 2 o más cuando falla; un control trata distinto los dos casos (§14).
 10. **Una corrección se cierra en tres pasos:** un test que reproduce el fallo (principio 8),
     un barrido de "¿dónde más vive este mismo patrón?" en todo el repo, y la verificación
     contra lo commiteado (`git show HEAD:<archivo>`), no contra el disco: corregido en disco
@@ -164,8 +167,8 @@ Guide (§1); `Propio` = decisión de estos proyectos.
 | Vistas enrutadas | PascalCase + sufijo `View` | `BooksView.vue` | Propio |
 | Layouts | PascalCase + sufijo `Layout` | `DashboardLayout.vue` | Propio |
 | Archivos JS utilitarios | camelCase | `charts.js`, `visitTracker.js` | Propio |
-| Módulos de estado | camelCase por dominio, sin prefijo `store` | `notifications.js` | Propio |
-| Archivos de rutas | camelCase, sin prefijo `routes` | `router/dashboard.js` | Propio |
+| Módulos de estado | camelCase por dominio, sin prefijo ni sufijo `store` | `notifications.js` | Propio |
+| Archivos de rutas | camelCase, sin prefijo ni sufijo `routes` | `router/dashboard.js` | Propio |
 | Servicios de API | Recurso de la API en camelCase + sufijo `Service` | `usersService.js` (`/users`) | Propio |
 | Variables y funciones | camelCase | `getUserData()` | Standard |
 | Datos de la API | Se conservan en snake_case, tal como llegan (§4.3) | `user.created_at` | Propio |
@@ -192,12 +195,19 @@ src/
   router/        index.js + un archivo por sección (dashboard.js)
   stores/        un store por dominio (Pinia) · en Vue 2: store/ con index.js + módulos Vuex
   services/      todo el acceso HTTP a la API (axios)
-  composables/   lógica compartida entre componentes · en Vue 2: mixins/
+  composables/   lógica compartida entre componentes (useIdleSession.js, §4.3) · en Vue 2: mixins/
   plugins/       inicialización de librerías (axios.js, vuetify.js, leaflet.js)
   js/            utilidades puras sin dependencia de Vue
   data/          catálogos y constantes estáticas
 public/          img/, json/, pdf/   (kebab-case)
 tests/           misma estructura que src/; <Nombre>.test.js (§4.5)
+index.html       con la etiqueta viewport (§8.1)
+vite.config.js   alias @ y configuración de Vitest (§4.5)
+eslint.config.js (§14)
+.env.development, .env.production   sólo variables públicas (§10)
+.nvmrc           versión de Node que corre (§10)
+.githooks/       hooks de git (§14)
+.github/workflows/  ci.yml (§14)
 ```
 
 ### 4.3 Reglas
@@ -228,39 +238,132 @@ tests/           misma estructura que src/; <Nombre>.test.js (§4.5)
   (doble extensión) y `user.settings.json` (punto entre palabras) están mal formados.
 - **Ni vistas ni componentes llaman a `axios` directamente**: usan una función de `src/services/`,
   nombrada con verbo (`getUsers`, `sendMessage`). Los services usan la instancia `api` de
-  `src/plugins/axios.js`, la única que conoce la URL base (`<PREFIJO>API_SERVER`, §4.4), envía
-  la cookie de sesión y manda al login ante un 401 (§6.2). Probada con Vitest:
+  `src/plugins/axios.js`, la única que conoce la URL base (`<PREFIJO>API_SERVER`, §4.4). Envía
+  las cookies de sesión y, ante un 401, renueva la sesión y reintenta una vez; si no puede,
+  manda al login (§6.2). Probada con Vitest (renueva y reintenta; una sola renovación para
+  varias peticiones que fallan a la vez; al login si la renovación o el reintento responden 401;
+  sin renovar ante un 401 del login; sin redirigir si el servidor no responde) y en el navegador:
   ```js
   import axios from 'axios'
   import router from '@/router'
 
-  // Instancia única para la API: envía la cookie de sesión y manda al login ante un 401.
+  // Instancia única para la API: envía las cookies de sesión y, ante un 401, renueva la sesión
+  // y reintenta una vez; si no puede, manda al login (§6.2).
   export const api = axios.create({
     baseURL: import.meta.env.VITE_API_SERVER,
     withCredentials: true
   })
 
+  // Hora de la última petición: useIdleSession mantiene viva la sesión mientras hay actividad.
+  export const lastRequest = { at: Date.now() }
+
+  let refreshing = null
+
+  // Una sola renovación compartida por todas las peticiones que fallen a la vez.
+  export function refreshSession () {
+    refreshing ??= api.post('/auth/refresh').finally(() => { refreshing = null })
+    return refreshing
+  }
+
+  api.interceptors.request.use(config => {
+    lastRequest.at = Date.now()
+    return config
+  })
+
   api.interceptors.response.use(
     response => response,
-    error => {
-      if (error.response?.status === 401) {
+    async error => {
+      const { config, response } = error
+      // Las rutas de /auth/ las maneja quien las llama: un 401 del login es una contraseña mal escrita.
+      if (response?.status === 401 && !config.url.startsWith('/auth/')) {
+        if (!config.retried) {
+          config.retried = true
+          const refreshed = await refreshSession().then(() => true, refreshError => {
+            // Sin respuesta del servidor no es una sesión terminada: no se manda al login.
+            if (refreshError.response?.status !== 401) throw refreshError
+            return false
+          })
+          if (refreshed) return api(config)
+        }
         router.push({ name: 'Login' })
       }
       return Promise.reject(error)
     }
   )
   ```
+- **Cierre por inactividad,** con `src/composables/useIdleSession.js`, que se llama en el layout de
+  las vistas que requieren sesión (`DashboardLayout.vue`). Tras `<PREFIJO>SESSION_IDLE_TTL`
+  segundos sin actividad del usuario cierra la sesión; mientras la haya, la renueva antes de que
+  el servidor la dé por inactiva, aunque el usuario sólo lea sin hacer peticiones. El servidor
+  aplica el mismo límite por su cuenta (§6.2): este composable es la comodidad, no el control.
+  Probado con Vitest (cierra a los 7 minutos sin actividad; con actividad continua sigue abierta
+  pasados los 7 minutos; no renueva sin actividad; deja de vigilar al desmontar) y en el navegador:
+  ```js
+  import { onMounted, onBeforeUnmount } from 'vue'
+  import { useRouter } from 'vue-router'
+  import { api, lastRequest, refreshSession } from '@/plugins/axios'
+
+  const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']
+
+  // Cierra la sesión tras SESSION_IDLE_TTL sin actividad del usuario y, mientras la haya,
+  // renueva la sesión antes de que el servidor la dé por inactiva (§6.2). Se usa en el layout
+  // de las vistas que requieren sesión.
+  export function useIdleSession () {
+    const router = useRouter()
+    const idleMs = Number(import.meta.env.VITE_SESSION_IDLE_TTL) * 1000
+    let lastActivityAt = Date.now()
+    let timer = null
+
+    function markActivity () {
+      lastActivityAt = Date.now()
+    }
+
+    function stop () {
+      clearInterval(timer)
+      ACTIVITY_EVENTS.forEach(name => window.removeEventListener(name, markActivity))
+    }
+
+    async function goToLogin () {
+      stop()
+      await router.push({ name: 'Login' })
+    }
+
+    function tick () {
+      const now = Date.now()
+      if (now - lastActivityAt >= idleMs) {
+        // Si el cierre no llega al servidor, éste igual da la sesión por inactiva.
+        api.post('/auth/logout').finally(goToLogin)
+      } else if (lastActivityAt > lastRequest.at && now - lastRequest.at >= idleMs / 2) {
+        refreshSession().catch(goToLogin)
+      }
+    }
+
+    onMounted(() => {
+      ACTIVITY_EVENTS.forEach(name => window.addEventListener(name, markActivity, { passive: true }))
+      timer = setInterval(tick, 1000)
+    })
+    onBeforeUnmount(stop)
+  }
+  ```
+  En Vue 2, la misma lógica va en un mixin del layout (§4.4).
 - **Fechas en hora de México.** La API las entrega en UTC (§6.4) y se muestran con `Intl`,
   nunca formateando el texto a mano (probado):
   ```js
   new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Mexico_City' })
     .format(new Date(user.created_at)) // '2026-10-11T22:03:00Z' → '11 oct 2026, 4:03 p.m.'
   ```
-- **Archivos con `FormData`,** enviados por la instancia `api` (`api.post('/padi-solicitudes', formData)`)
+  Una fecha sola (`YYYY-MM-DD`, §6.4) se formatea con `timeZone: 'UTC'`: `new Date('2026-10-11')`
+  es la medianoche UTC, que en México todavía es el día 10 (probado: con la zona de México se
+  muestra "10 oct 2026").
+  ```js
+  new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeZone: 'UTC' })
+    .format(new Date(user.birth_date)) // '2026-10-11' → '11 oct 2026'
+  ```
+- **Archivos con `FormData`,** enviados por la instancia `api` (`api.post('/applications', formData)`)
   y sin fijar a mano la cabecera `Content-Type`: el navegador la arma con el separador que
   necesita. La validación en el navegador (`accept`, tamaño) es sólo comodidad para el
   usuario; la que cuenta es la del servidor (§5.4). La URL de un archivo es
-  `<PREFIJO>MULTIMEDIA` + la ruta relativa que devuelve la API.
+  `<PREFIJO>MULTIMEDIA_URL` (§10) + la ruta relativa que devuelve la API.
 - **HTML y URLs que vienen de la API** pasan por `src/js/safeHtml.js` (probado con DOMPurify 3
   en jsdom): HTML saneado antes de `v-html`, y sólo URLs `http(s)` en un `:href`. Si un campo
   no necesita HTML, se muestra con `{{ }}` y no hace falta sanearlo.
@@ -321,14 +424,16 @@ Vue 2 y uno Vue 3 se lean igual de arriba abajo.
 ### 4.5 Tests
 
 Vitest + `@vue/test-utils` + happy-dom: la combinación que recomienda la guía de Vue para
-proyectos con Vite. Aplica a Vue 3; los proyectos Vue 2 (Vue CLI, sin Vite) quedan fuera de
-la regla de tests y lo declaran en su `README.md`.
+proyectos con Vite. Aplica a Vue 3. Un proyecto Vue 2 (Vue CLI, sin Vite) queda fuera de esta
+configuración: si tiene tests (por ejemplo, Jest con `@vue/cli-plugin-unit-jest`), su script se
+llama `test`, para que la CI los corra; si no tiene, lo declara en su `README.md` y quita el paso
+`npm test` de su CI (§14).
 
 - **Ubicación:** `tests/` en la raíz, con la misma estructura que `src/`. El archivo se llama
   como lo que prueba + `.test.js`: `src/components/UserCard.vue` →
   `tests/components/UserCard.test.js`. Nada de pruebas dentro de `src/` (§4.3).
 - **Configuración**, en `vite.config.js` (probada con Vitest 5), junto al alias `@` → `src/`
-  que ya trae Vite:
+  que ya trae la plantilla de `create-vue` (§16):
   ```js
   test: {
     environment: 'happy-dom',
@@ -345,7 +450,9 @@ la regla de tests y lo declaran en su `README.md`.
   en una versión compatible con el Node del proyecto (probado con jsdom 26).
 - **Componentes:** se prueba su interfaz pública —props, eventos y slots—, no su estado
   interno, y sin snapshots (guía de Vue). **Services:** con la instancia `api` simulada,
-  `vi.mock('@/plugins/axios', () => ({ api: { get: vi.fn() } }))`.
+  `vi.mock('@/plugins/axios', () => ({ api: { get: vi.fn() } }))`. **El plugin de axios:** el
+  servidor se simula con `api.defaults.adapter`, una función que recibe la petición y devuelve
+  o lanza la respuesta, sin red.
   ```js
   import { describe, it, expect } from 'vitest'
   import { mount } from '@vue/test-utils'
@@ -394,18 +501,19 @@ sobrante después de ella se envía al cliente antes de los headers y produce
 
 ```
 api/
-  Core/             Router, Request, Response, Cors, BaseController
+  Core/             Router, Request, Response, Cors, BaseController, Env, FileUpload, SqlIn
   Core/Exceptions/  ApiException, ValidationException, DatabaseException, NotFoundException
   Controllers/      entrada HTTP: valida el 'type' y delega; sin lógica de negocio
-  Services/         lógica de negocio y SQL
+  Services/         lógica de negocio y SQL (AuthService: sesiones, §6.2)
   Models/           BaseModel: conexión PDO y ejecución de consultas preparadas, sin SQL de negocio
-  Middleware/       AuthMiddleware, etc.
+  Middleware/       AuthMiddleware (§6.2), etc.
   routes/           un archivo por recurso, <segmento-url>.routes.php
 public/             raíz web: la única carpeta que sirve el servidor
-  index.php         bootstrap: carga ../.env, ../vendor/autoload.php y las rutas
-  .htaccess         redirige a index.php toda petición que no sea un archivo existente
+  index.php         bootstrap: carga ../vendor/autoload.php, el entorno (§10) y las rutas
+  .htaccess         redirige a index.php toda petición que no sea un archivo existente, y
+                    lleva las cabeceras de seguridad de la API (§5.5)
   multimedia/       archivos públicos subidos; su .htaccess impide ejecutar scripts (§5.4)
-tests/              Unit/ (sin BD) y Database/ (BD _test), con la estructura de api/ (§5.3)
+tests/              bootstrap.php, Unit/ (sin BD) y Database/ (BD _test), con la estructura de api/ (§5.3)
 phpunit.xml         grupos unit y database (§5.3)
 database/
   migrations/       migraciones de Phinx (§7.2)
@@ -415,6 +523,8 @@ storage/            archivos privados subidos, fuera de la raíz web (§5.4)
 composer.json       autoload PSR-4 ("App\\" → "api/") y versión de PHP (require.php, §10)
 vendor/             dependencias de composer, junto a composer.json — nunca se edita
 .env                configuración local, siempre fuera de git
+.env.example        las variables que necesita el proyecto, sin valores reales (§10)
+.php-cs-fixer.dist.php  reglas de formato (§14)
 .php-version        versión de PHP que corre: local, CI y producción (§10)
 .githooks/          hooks de git (§14)
 .github/workflows/  ci.yml (§14)
@@ -466,7 +576,8 @@ privados en `storage/`, fuera de la raíz web. Las reglas completas están en §
 ### 5.3 Tests
 
 PHPUnit, en la versión más reciente compatible con el `.php-version` del proyecto (§10).
-Fuente: `phpunit.de/supported-versions.html`.
+Fuente: `phpunit.de/supported-versions.html`. La tabla es la de octubre de 2026; si ya no
+coincide con la fuente, manda la fuente.
 
 | PHP | PHPUnit |
 |---|---|
@@ -488,7 +599,7 @@ Fuente: `phpunit.de/supported-versions.html`.
 - **`phpunit.xml`** en la raíz (probado con PHPUnit 10.5 y PHP 8.1):
   ```xml
   <?xml version="1.0" encoding="UTF-8"?>
-  <phpunit bootstrap="vendor/autoload.php" colors="true">
+  <phpunit bootstrap="tests/bootstrap.php" colors="true">
     <testsuites>
       <testsuite name="unit">
         <directory>tests/Unit</directory>
@@ -502,8 +613,23 @@ Fuente: `phpunit.de/supported-versions.html`.
     </php>
   </phpunit>
   ```
-  `app_test` se cambia por `<proyecto>_test`. `force="true"` hace que valga aunque el
-  entorno del equipo apunte a otra BD.
+  `app_test` se cambia por `<proyecto>_test`, el mismo nombre que usa la CI (§14).
+  `force="true"` hace que valga aunque el entorno del equipo apunte a otra BD.
+- **`tests/bootstrap.php`** carga el `.env` local (§10), sin sobrescribir el `DB_NAME` que fija
+  `phpunit.xml` (probado: los tests usan la BD `_test` aunque el `.env` apunte a la de desarrollo,
+  y en la CI, sin `.env`, toman las variables del entorno):
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  use App\Core\Env;
+
+  // Carga el .env local sin sobrescribir lo que fija phpunit.xml (DB_NAME de pruebas, §5.3).
+  require __DIR__ . '/../vendor/autoload.php';
+
+  Env::load(__DIR__ . '/..');
+  ```
 - **La BD de pruebas termina en `_test`** y es distinta de la de desarrollo, porque los tests
   borran y crean datos. Los tests de `tests/Database/` extienden esta clase, que se detiene
   si el nombre no termina en `_test`:
@@ -514,6 +640,7 @@ Fuente: `phpunit.de/supported-versions.html`.
 
   namespace App\Tests\Database;
 
+  use App\Core\Env;
   use PHPUnit\Framework\TestCase;
   use RuntimeException;
 
@@ -523,7 +650,7 @@ Fuente: `phpunit.de/supported-versions.html`.
   {
     public static function setUpBeforeClass(): void
     {
-      $database = (string) getenv('DB_NAME');
+      $database = Env::get('DB_NAME');
 
       if (!str_ends_with($database, '_test')) {
         throw new RuntimeException("DB_NAME debe terminar en _test; es '{$database}'.");
@@ -531,14 +658,19 @@ Fuente: `phpunit.de/supported-versions.html`.
     }
   }
   ```
-  Para que el freno sirva, el BaseModel toma la BD de `DB_NAME` del entorno, y el cargador
-  del `.env` no sobrescribe una variable que ya existe.
+  Para que el freno sirva, el BaseModel lee la BD con `Env::get('DB_NAME')` (§7.1), y
+  `Env::load()` no sobrescribe una variable que ya existe (§10). La BD de pruebas se migra con
+  `DB_NAME=<proyecto>_test vendor/bin/phinx migrate` (probado: la variable de la terminal gana
+  sobre el `.env`).
 - **SQLite no sirve como sustituto:** el SQL del §7 (`ON DUPLICATE KEY UPDATE`) es de
   MySQL/MariaDB.
 - **En la CI corren los dos grupos** (§14), contra un contenedor con el motor de producción
   (§7.1) y después de aplicar las migraciones (§7.2).
 - **Matriz de autorización:** cada endpoint protegido tiene tests de las tres respuestas, 401
   sin sesión, 403 con sesión pero sin permiso, y 200 con permiso (§5.5).
+- **Sesiones:** tests de cada caso del §6.2 que corta una sesión (cierre, cambio de contraseña,
+  usuario desactivado, permiso retirado, inactividad, límite absoluto y reúso del token de
+  renovación), con duraciones cortas en el entorno de pruebas para no esperar minutos reales.
 
 ### 5.4 Archivos subidos
 
@@ -557,10 +689,11 @@ llama y dónde vive.
   - Públicos (los puede ver cualquiera): `public/multimedia/<recurso>/`, con el `.htaccess` de
     abajo.
   - Privados (requieren sesión): `storage/<recurso>/`, fuera de la raíz web, entregados por un
-    endpoint con `AuthMiddleware`. En un backend existente sin `public/`, una subcarpeta con
-    un `.htaccess` de una sola línea, `Require all denied`.
+    endpoint que verifica el permiso (`authorize()`, §5.5). Esa respuesta es el archivo con su
+    `Content-Type`, no la envoltura JSON del §6. En un backend existente sin `public/`, `storage/`
+    lleva un `.htaccess` de una sola línea, `Require all denied`, que se versiona (§11).
 - **La BD guarda sólo la ruta que genera el servidor,** relativa a la carpeta base
-  (`padi-solicitudes/7bf34498f38250c2aa37dc6663765354.pdf`). Si una edición no trae archivo
+  (`applications/7bf34498f38250c2aa37dc6663765354.pdf`). Si una edición no trae archivo
   nuevo, se conserva la ruta que ya está en la BD: nunca se acepta una ruta enviada por el
   cliente.
 - **Tamaño:** límite por recurso en el Service, menor que `upload_max_filesize` y
@@ -644,9 +777,10 @@ llama y dónde vive.
   }
   ```
   Uso en un Service, con la carpeta y los tipos fijos en el código (`$subdir` nunca sale de la
-  petición):
+  petición). `MULTIMEDIA_DIR` es una constante del bootstrap con la ruta absoluta de
+  `public/multimedia`:
   ```php
-  $path = FileUpload::save('pdf', MULTIMEDIA_DIR, 'padi-solicitudes', ['application/pdf'], 10 * 1024 * 1024);
+  $path = FileUpload::save('pdf', MULTIMEDIA_DIR, 'applications', ['application/pdf'], 10 * 1024 * 1024);
   ```
 - **Petición mayor que `post_max_size`**, en el Core antes del router (probado; sólo aplica a
   `multipart`, porque PHP tampoco llena `$_POST` con una petición JSON normal):
@@ -673,18 +807,23 @@ llama y dónde vive.
   ```
   Son dos capas: `FilesMatch` niega las extensiones ejecutables, y `php_flag engine off` apaga
   PHP en la carpeta aunque alguna extensión se escapara de la lista.
+- **`multimedia/` hereda las cabeceras de `public/.htaccess`** (§5.5; probado en Apache 2.4).
+  `nosniff` y la CSP protegen los archivos subidos; `Cache-Control: no-store` impide guardarlos
+  en caché, y `X-Frame-Options: DENY` impide mostrar un PDF dentro de un `<iframe>`. No se
+  relajan por defecto: un proyecto que necesite caché o el `<iframe>` lo cambia en el
+  `.htaccess` de `multimedia/` y lo declara en su `README.md`.
 
 ### 5.5 Seguridad del backend
 
-Reglas que salen de las auditorías de seguridad de un proyecto real: cada una corresponde a un
-fallo que ocurrió.
+Cada regla corresponde a un fallo que se ha encontrado en auditorías de seguridad reales.
 
-- **Cada endpoint declara su acceso, de forma explícita:**
+- **Cada endpoint declara su acceso, de forma explícita,** con los métodos del `AuthMiddleware`
+  (§6.2):
   - Público a propósito, con un comentario que lo diga.
-  - `authenticate()` sólo para acciones sobre la propia cuenta (perfil, cambio de contraseña,
-    cierre de sesión).
-  - `authorize(módulo, nivel)` para todo lo demás. Un endpoint que sólo verifica que haya
-    sesión deja pasar a cualquier usuario autenticado, tenga o no permiso.
+  - `authenticate()` sólo para acciones sobre la propia cuenta (perfil, cambio de contraseña).
+  - `authorize('<permiso>')` para todo lo demás. Un endpoint que sólo verifica que haya
+    sesión deja pasar a cualquier usuario autenticado, tenga o no permiso. Los permisos se leen
+    de la BD en cada petición, nunca del token: retirar uno surte efecto de inmediato.
 
   La matriz de autorización se prueba (401, 403 y 200; §5.3).
 - **La estructura del SQL nunca sale de la petición:** ni nombres de columna, ni de
@@ -722,8 +861,18 @@ fallo que ocurrió.
   }
   ```
   Uso: `[$in, $params] = SqlIn::build($body['state_ids'] ?? null, 'state_ids');` y luego
-  `"… WHERE state_id {$in}"` con `$params`. Si el orden lo elige el usuario, se traduce desde
-  una lista fija: `['name' => 'full_name', 'date' => 'created_at'][$sort] ?? 'id'`.
+  `"… WHERE state_id {$in}"` con `$params`: `$in` sólo contiene `IN (?, ?, ?)`.
+- **Si el orden lo elige el usuario,** se traduce desde una lista fija. Un valor que no está en
+  la lista responde 400, igual que un `type` desconocido (§6); sin el `is_string()`,
+  `?sort[]=x` provoca un `TypeError` y un 500 (probado):
+  ```php
+  $columns = ['name' => 'full_name', 'date' => 'created_at'];
+  $sort = $_GET['sort'] ?? 'date';
+  if (!is_string($sort) || !isset($columns[$sort])) {
+    // → 400 'Orden no válido.'
+  }
+  $orderBy = $columns[$sort];
+  ```
 - **Un solo helper por control de seguridad.** Una función de seguridad copiada en dos
   archivos termina corregida en uno y vulnerable en el otro.
 - **HTML y URLs que se guardan:** si un campo admite HTML, se sanea al guardar con una lista
@@ -750,15 +899,17 @@ fallo que ocurrió.
   - Una contraseña temporal generada por el sistema es aleatoria y larga:
     `bin2hex(random_bytes(12))` da 24 caracteres (96 bits).
 - **Los secretos fallan cerrados:** sin valor de respaldo (`getenv('JWT_SECRET') ?: 'algo'`
-  deja en producción un secreto conocido); si falta, la API no arranca. Los secretos se
-  comparan con `hash_equals()`, nunca con `===` o `!==`.
+  deja en producción un secreto conocido); se leen con `Env::get()`, y si falta uno la API no
+  arranca (§10). Los secretos se comparan con `hash_equals()`, nunca con `===` o `!==`.
 - **Logs sin datos sensibles:** nunca contraseñas, tokens ni datos personales. Los saltos de
   línea de un mensaje se reemplazan antes de escribirlo (`str_replace(["\r", "\n"], ' ', $msg)`),
   para que nadie pueda fabricar líneas falsas en el log.
 - **Sin endpoints de prueba ni código muerto alcanzable:** lo que no se usa se borra (git lo
   conserva; principio 3).
-- **Cabeceras de seguridad de la API** (OWASP REST Security Cheat Sheet), en el `.htaccess` de
-  la API (probado en Apache 2.4: salen también en las respuestas de error):
+- **Cabeceras de seguridad de la API** (OWASP REST Security Cheat Sheet), en `public/.htaccess`
+  (probado en Apache 2.4: salen también en las respuestas de error, y las hereda `multimedia/`,
+  §5.4). En un backend existente sin `public/`, van en el `.htaccess` de la carpeta de la API,
+  nunca en el de la raíz si ésta también sirve páginas: la CSP las dejaría en blanco.
   ```apache
   # Cabeceras de seguridad de la API (§5.5, OWASP REST Security Cheat Sheet).
   <IfModule mod_headers.c>
@@ -782,11 +933,13 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 
 **Envoltura de respuesta** (`Core/Response.php`): toda respuesta lleva `status`, `success` y
 `message`. El éxito agrega `result`; una lista paginada agrega `total`, `page` y `per_page`
-(§6.3); un error de validación (422) agrega `errors` con el detalle por campo:
+(§6.3); un error de validación (422) o un conflicto (409) agrega `errors` con el detalle por
+campo, para que el formulario marque el campo:
 
 ```json
 { "status": 200, "success": true,  "message": "OK", "total": 25, "page": 1, "per_page": 20, "result": [] }
-{ "status": 422, "success": false, "message": "Revisa los datos marcados.", "errors": { "email": "Ya existe una cuenta con este correo." } }
+{ "status": 422, "success": false, "message": "Revisa los datos marcados.", "errors": { "email": "Escribe un correo válido." } }
+{ "status": 409, "success": false, "message": "Ya existe una cuenta con este correo.", "errors": { "email": "Ya existe una cuenta con este correo." } }
 ```
 
 - **`status` es siempre el código HTTP de la respuesta,** y `success` es `true` sólo con un
@@ -811,8 +964,45 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 - **Errores** siempre vía excepciones tipadas capturadas en `BaseController::handle()`.
   `ValidationException` y `ApiException` se muestran; `DatabaseException` y `Throwable`
   se registran en log y devuelven mensaje genérico. **Nunca** exponer SQL ni stack traces.
+- **Una clave `UNIQUE` repetida responde 409, no 500.** El Service captura el error 1062 del
+  motor; así funciona también si dos peticiones llegan a la vez, cosa que una consulta previa
+  no cubre. Probado con MariaDB (también con el correo en mayúsculas: la collation del §7.1 no
+  las distingue):
+  ```php
+  try {
+    BaseModel::run(
+      'INSERT INTO users (email, password_hash) VALUES (?, ?)',
+      [$email, password_hash($password, PASSWORD_BCRYPT, ['cost' => 12])],
+    );
+  } catch (PDOException $e) {
+    // 1062: clave UNIQUE repetida. Es un conflicto con un dato que ya existe: 409, no 500.
+    if (($e->errorInfo[1] ?? null) === 1062) {
+      throw new ApiException('Ya existe una cuenta con este correo.', 409, ['email' => 'Ya existe una cuenta con este correo.']);
+    }
+    throw $e;
+  }
+  ```
+  `ApiException` lleva el mensaje, el código HTTP y, opcionalmente, `errors`:
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Core\Exceptions;
+
+  use RuntimeException;
+
+  class ApiException extends RuntimeException
+  {
+    /** @param array<string, string> $errors detalle por campo, como en el 422 (§6) */
+    public function __construct(string $message, public readonly int $status, public readonly array $errors = [])
+    {
+      parent::__construct($message);
+    }
+  }
+  ```
 - **SQL siempre preparado** (`?` + arreglo). Nunca concatenar entrada del usuario.
-- **`declare(strict_types=1);`** al inicio de cada servicio y modelo nuevo.
+- **`declare(strict_types=1);`** al inicio de cada archivo PHP nuevo.
 
 ### 6.1 Recursos, métodos y códigos
 
@@ -837,71 +1027,329 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 - **Un 405 lleva la cabecera `Allow`** con los métodos que sí acepta el recurso
   (`Allow: GET, POST`): la exige la norma HTTP (RFC 9110).
 - **Con Bearer (§6.2), el 401 lleva `WWW-Authenticate: Bearer`.** Con cookie no hay un esquema
-  registrado para esa cabecera.
+  registrado para esa cabecera y no se envía (desviación declarada en el §13).
 
 ### 6.2 Autenticación
 
-- **Token JWT en una cookie `httpOnly`** cuando el frontend y la API comparten sitio (el mismo
-  dominio, aunque cambien el subdominio o el puerto). JavaScript no puede leer esa cookie, así
-  que un script inyectado (XSS) no puede robar la sesión; OWASP desaconseja guardar el token
-  en `localStorage`. Una API que consumen clientes que no son navegador (apps, scripts) usa
-  `Authorization: Bearer <token>` y lo declara en su `README.md`.
+Dos tokens, cada uno en su cookie `httpOnly`:
+
+| Cookie | Qué es | Duración | Viaja a |
+|---|---|---|---|
+| `access_token` | JWT firmado que identifica al usuario y su sesión | `JWT_TTL`, máximo 15 minutos | Toda la API (`path` `/`) |
+| `refresh_token` | Valor aleatorio de un solo uso; la BD guarda sólo su hash | Hasta el límite absoluto de la sesión | Sólo `/auth` (`path` `<API_BASE_PATH>/auth`) |
+
+- **Cookies `httpOnly`** cuando el frontend y la API comparten sitio (el mismo dominio, aunque
+  cambien el subdominio o el puerto). JavaScript no puede leerlas, así que un script inyectado
+  (XSS) no puede robar la sesión; OWASP desaconseja guardar tokens en `localStorage`. Una API que
+  consumen clientes que no son navegador (apps, scripts) usa `Authorization: Bearer <token>` y
+  lo declara en su `README.md`.
+- **En local, el frontend y la API usan el mismo host:** `localhost` en los dos, no `localhost`
+  y `127.0.0.1`. Para el navegador son sitios distintos y no guarda las cookies `SameSite=Strict`
+  (probado: el inicio de sesión responde 200, pero la petición siguiente recibe 401).
+  `'secure' => true` funciona en `http://localhost`, que los navegadores tratan como contexto
+  seguro (probado).
 - **Librería:** `firebase/php-jwt` (`composer require firebase/php-jwt`), algoritmo HS256.
-- **`JWT_SECRET` de al menos 256 bits** (§10); la librería rechaza claves más cortas. Se
-  genera con `php -r "echo bin2hex(random_bytes(32));"`.
-- **Claims obligatorios:** `sub` (id del usuario), `iss` (el emisor, `JWT_ISSUER`), `jti` (un
-  identificador único, para poder revocarlo), `iat` y `exp`. La duración sale de `JWT_TTL`, en
-  segundos, con un máximo de 8 horas (una jornada). Cualquiera puede decodificar un JWT y leer
-  su contenido: nunca lleva datos sensibles.
-- **Emitir**, al iniciar sesión (probado con php-jwt 7 y PHP 8.1):
+  `JWT_SECRET` de al menos 256 bits (§10); la librería rechaza claves más cortas. Se genera con
+  `php -r "echo bin2hex(random_bytes(32));"`.
+- **Claims:** `sub` (id del usuario), `sid` (id de la sesión), `iss` (`JWT_ISSUER`), `iat` y
+  `exp`. Cualquiera puede decodificar un JWT y leer su contenido: nunca lleva datos sensibles, ni
+  los permisos, que se leen de la BD (§5.5).
+- **Sin `aud`, a propósito:** una API con un solo emisor y un solo consumidor (su frontend) no
+  tiene otra audiencia que distinguir, y un valor artificial no cierra ninguna brecha. Es una
+  exclusión deliberada, no un pendiente.
+- **Duraciones** (§10):
+  - `JWT_TTL`: vida del token de acceso, máximo 900 segundos (15 minutos).
+  - `SESSION_IDLE_TTL`: inactividad permitida. Sin peticiones en ese tiempo, la sesión se
+    cierra (por ejemplo, 420: 7 minutos).
+  - `SESSION_MAX_TTL`: límite absoluto desde el inicio de sesión, máximo 28800 (8 horas, una
+    jornada). Renovar no lo extiende.
+- **El estado de cada sesión vive en `user_sessions`** (migración probada con Phinx). `users`
+  lleva además `is_active` y `password_changed_at` (`DATETIME`, con `CURRENT_TIMESTAMP` por
+  defecto):
   ```php
-  $now = time();
-  $ttl = (int) getenv('JWT_TTL');
-  $claims = [
-    'sub' => $userId,
-    'iss' => getenv('JWT_ISSUER'),
-    'jti' => bin2hex(random_bytes(16)),
-    'iat' => $now,
-    'exp' => $now + $ttl,
-  ];
-  $token = JWT::encode($claims, (string) getenv('JWT_SECRET'), 'HS256');
-  setcookie('access_token', $token, [
-    'expires' => $now + $ttl,
-    'path' => '/',
-    'secure' => true,
-    'httponly' => true,
-    'samesite' => 'Strict',
-  ]);
+  <?php
+
+  declare(strict_types=1);
+
+  use Phinx\Migration\AbstractMigration;
+
+  final class CreateUserSessions extends AbstractMigration
+  {
+    public function change(): void
+    {
+      $this->table('user_sessions')
+        ->addColumn('user_id', 'integer', ['signed' => false, 'null' => false])
+        ->addColumn('refresh_token_hash', 'char', ['limit' => 64, 'null' => false])
+        ->addColumn('previous_refresh_token_hash', 'char', ['limit' => 64, 'null' => true])
+        ->addColumn('password_changed_at', 'datetime', ['null' => false])
+        ->addColumn('created_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP', 'null' => false])
+        ->addColumn('refreshed_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP', 'null' => false])
+        ->addColumn('last_activity_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP', 'null' => false])
+        ->addColumn('expires_at', 'datetime', ['null' => false])
+        ->addColumn('revoked_at', 'datetime', ['null' => true])
+        ->addIndex(['refresh_token_hash'], ['unique' => true, 'name' => 'uq_user_sessions_refresh_token_hash'])
+        ->addIndex(['previous_refresh_token_hash'], ['name' => 'idx_user_sessions_previous_refresh_token_hash'])
+        ->addForeignKey('user_id', 'users', 'id', ['delete' => 'CASCADE', 'constraint' => 'fk_user_sessions_users'])
+        ->create();
+    }
+  }
   ```
-- **Verificar**, en el `AuthMiddleware` (probado). Un token ausente, alterado o vencido recibe
-  el mismo trato:
+- **En cada petición protegida,** el `AuthMiddleware` verifica el token y luego la sesión, con
+  `AuthService::checkSession()`. Así, cerrar sesión, cambiar la contraseña, desactivar al usuario
+  o retirarle un permiso surte efecto en la petición siguiente, no cuando vence el token:
   ```php
-  try {
-    $claims = JWT::decode($_COOKIE['access_token'] ?? '', new Key((string) getenv('JWT_SECRET'), 'HS256'));
-  } catch (UnexpectedValueException | DomainException $e) {
-    // → 401 'Inicia sesión para continuar.'
-  }
-  if (!isset($claims->exp, $claims->jti) || ($claims->iss ?? null) !== getenv('JWT_ISSUER')) {
-    // → 401: un token sin vencimiento nunca caducaría, y uno de otro emisor no es nuestro
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Middleware;
+
+  use App\Core\Env;
+  use App\Core\Exceptions\ApiException;
+  use App\Services\AuthService;
+  use DomainException;
+  use Firebase\JWT\JWT;
+  use Firebase\JWT\Key;
+  use UnexpectedValueException;
+
+  final class AuthMiddleware
+  {
+    /** @return array{user_id: int, session_id: int} */
+    public static function authenticate(): array
+    {
+      try {
+        $claims = JWT::decode($_COOKIE['access_token'] ?? '', new Key(Env::get('JWT_SECRET'), 'HS256'));
+      } catch (UnexpectedValueException|DomainException $e) {
+        throw new ApiException('Inicia sesión para continuar.', 401);
+      }
+      // Sin aud a propósito: un solo emisor y un solo consumidor (§6.2).
+      if (!isset($claims->exp, $claims->sub, $claims->sid) || ($claims->iss ?? null) !== Env::get('JWT_ISSUER')) {
+        throw new ApiException('Inicia sesión para continuar.', 401);
+      }
+
+      AuthService::checkSession((int) $claims->sub, (int) $claims->sid);
+
+      return ['user_id' => (int) $claims->sub, 'session_id' => (int) $claims->sid];
+    }
+
+    // Los permisos se leen de la BD en cada petición: retirar uno surte efecto de inmediato.
+    // Sesión válida y, además, el permiso que exige el endpoint (§5.5).
+    public static function authorize(string $permission): array
+    {
+      $session = self::authenticate();
+
+      AuthService::checkPermission($session['user_id'], $permission);
+
+      return $session;
+    }
   }
   ```
-- **Cerrar sesión revoca el token:** su `jti` se guarda en una tabla de tokens revocados (con
-  su `exp`, para poder limpiarla), el `AuthMiddleware` la consulta en cada petición, y la
-  cookie se borra.
-- **Cambiar la contraseña cierra las demás sesiones:** el token lleva la fecha del último
-  cambio (`password_changed_at` en `users`), y una sesión emitida antes de esa fecha recibe 401.
-  Sin esto, "cambia tu contraseña" no sirve ante una sesión robada.
+- **`Services/AuthService.php`** concentra el resto:
+  - **Inicio de sesión:** crea la sesión y entrega las dos cookies. El límite de intentos (abajo)
+    va antes de verificar la contraseña.
+  - **Revisión de cada petición:** una sola consulta comprueba que la sesión no esté cerrada,
+    vencida ni inactiva, que el usuario siga activo y que su contraseña no haya cambiado desde
+    que la abrió; si todo está bien, registra la actividad.
+  - **Renovación:** el token de renovación es de un solo uso; cada renovación lo cambia. El
+    anterior se acepta sólo durante 10 segundos, para que dos pestañas que renuevan a la vez no
+    se cierren la sesión una a la otra. Pasado ese margen, si el anterior vuelve a aparecer es
+    que alguien más lo tiene, y la sesión se cierra.
+  - **Cierre:** revoca la sesión y borra las dos cookies.
+  - **Cambio de contraseña:** actualiza `password_changed_at`; las demás sesiones dejan de
+    coincidir y terminan, y la actual toma la nueva fecha. Todo cambio de contraseña (el propio
+    y el que hace un administrador) pasa por ese único lugar.
+
+  Probado contra MariaDB con 35 casos: cookies y su `path`; dos peticiones en el mismo segundo;
+  permiso retirado (403 inmediato); vencimiento del token de acceso y renovación; rotación; dos
+  pestañas dentro del margen; reúso detectado; cierre de sesión con tokens copiados antes del
+  cierre; cambio de contraseña con otra sesión abierta; usuario desactivado; inactividad; uso
+  continuo más allá del límite de inactividad, y límite absoluto. Cada prueba falla si se quita
+  la regla que cubre. En el navegador: cookies que JavaScript no ve, renovación y reintento ante
+  un 401, cierre por inactividad, y cookies borradas al cerrar sesión.
+  ```php
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Services;
+
+  use App\Core\Env;
+  use App\Core\Exceptions\ApiException;
+  use App\Models\BaseModel;
+  use Firebase\JWT\JWT;
+
+  // Sesiones (§6.2): token de acceso corto (JWT) + token de renovación de un solo uso. El estado
+  // de la sesión vive en user_sessions y se revisa en cada petición.
+  final class AuthService
+  {
+    // Margen en el que un token de renovación recién rotado todavía se acepta: dos pestañas
+    // que renuevan a la vez no deben cerrarse la sesión una a la otra.
+    private const REFRESH_GRACE_SECONDS = 10;
+
+    /** @return array{id: int, email: string} */
+    public static function login(string $email, string $password): array
+    {
+      $user = BaseModel::one('SELECT id, email, password_hash, is_active, password_changed_at FROM users WHERE email = ?', [$email]);
+
+      // Mismo 401 para usuario inexistente, inactivo o contraseña incorrecta (§6.2).
+      if ($user === null || !$user['is_active'] || !password_verify($password, $user['password_hash'])) {
+        throw new ApiException('Correo o contraseña incorrectos.', 401);
+      }
+
+      $refreshToken = bin2hex(random_bytes(32));
+      BaseModel::run(
+        'INSERT INTO user_sessions (user_id, refresh_token_hash, password_changed_at, expires_at)
+         VALUES (?, ?, ?, NOW() + INTERVAL ? SECOND)',
+        [$user['id'], hash('sha256', $refreshToken), $user['password_changed_at'], (int) Env::get('SESSION_MAX_TTL')],
+      );
+      $sessionId = (int) BaseModel::pdo()->lastInsertId();
+
+      self::sendCookies((int) $user['id'], $sessionId, $refreshToken);
+
+      return ['id' => (int) $user['id'], 'email' => $user['email']];
+    }
+
+    // Revisión de cada petición protegida: la sesión sigue abierta, no está inactiva ni
+    // vencida, el usuario sigue activo y su contraseña no cambió desde que se abrió.
+    public static function checkSession(int $userId, int $sessionId): void
+    {
+      $session = BaseModel::one(
+        'SELECT s.id FROM user_sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL AND s.expires_at > NOW()
+           AND s.last_activity_at > NOW() - INTERVAL ? SECOND
+           AND u.is_active = 1 AND u.password_changed_at = s.password_changed_at',
+        [$sessionId, $userId, (int) Env::get('SESSION_IDLE_TTL')],
+      );
+      if ($session === null) {
+        throw new ApiException('Tu sesión terminó. Inicia sesión de nuevo.', 401);
+      }
+
+      BaseModel::run('UPDATE user_sessions SET last_activity_at = NOW() WHERE id = ?', [$sessionId]);
+    }
+
+    // Los permisos se leen de la BD en cada petición: retirar uno surte efecto de inmediato.
+    public static function checkPermission(int $userId, string $permission): void
+    {
+      $granted = BaseModel::one('SELECT 1 FROM user_permissions WHERE user_id = ? AND permission = ?', [$userId, $permission]);
+      if ($granted === null) {
+        throw new ApiException('No tienes permiso para esta acción.', 403);
+      }
+    }
+
+    public static function refresh(string $refreshToken): void
+    {
+      $hash = hash('sha256', $refreshToken);
+      $session = BaseModel::one(
+        'SELECT s.id, s.user_id, s.refresh_token_hash, s.refreshed_at > NOW() - INTERVAL ? SECOND AS in_grace
+         FROM user_sessions s WHERE s.refresh_token_hash = ? OR s.previous_refresh_token_hash = ?',
+        [self::REFRESH_GRACE_SECONDS, $hash, $hash],
+      );
+      if ($session === null) {
+        throw new ApiException('Tu sesión terminó. Inicia sesión de nuevo.', 401);
+      }
+
+      $userId = (int) $session['user_id'];
+      $sessionId = (int) $session['id'];
+
+      if (!hash_equals($session['refresh_token_hash'], $hash)) {
+        if (!$session['in_grace']) {
+          // Un token ya usado vuelve a aparecer: alguien más lo tiene. Se cierra la sesión.
+          BaseModel::run('UPDATE user_sessions SET revoked_at = NOW() WHERE id = ?', [$sessionId]);
+          throw new ApiException('Tu sesión terminó. Inicia sesión de nuevo.', 401);
+        }
+        // Otra pestaña acaba de rotarlo: sólo se entrega un token de acceso nuevo.
+        self::checkSession($userId, $sessionId);
+        self::sendCookies($userId, $sessionId, null);
+
+        return;
+      }
+
+      self::checkSession($userId, $sessionId);
+
+      $newToken = bin2hex(random_bytes(32));
+      BaseModel::run(
+        'UPDATE user_sessions SET previous_refresh_token_hash = refresh_token_hash, refresh_token_hash = ?, refreshed_at = NOW()
+         WHERE id = ?',
+        [hash('sha256', $newToken), $sessionId],
+      );
+      self::sendCookies($userId, $sessionId, $newToken);
+    }
+
+    public static function logout(?string $refreshToken): void
+    {
+      if ($refreshToken !== null && $refreshToken !== '') {
+        $hash = hash('sha256', $refreshToken);
+        BaseModel::run(
+          'UPDATE user_sessions SET revoked_at = NOW() WHERE (refresh_token_hash = ? OR previous_refresh_token_hash = ?) AND revoked_at IS NULL',
+          [$hash, $hash],
+        );
+      }
+      self::clearCookies();
+    }
+
+    // Cierra las demás sesiones del usuario: dejan de coincidir con password_changed_at.
+    public static function changePassword(int $userId, int $sessionId, string $current, string $new): void
+    {
+      $user = BaseModel::one('SELECT password_hash FROM users WHERE id = ?', [$userId]);
+      if ($user === null || !password_verify($current, $user['password_hash'])) {
+        throw new ApiException('La contraseña actual no es correcta.', 422);
+      }
+
+      BaseModel::run(
+        'UPDATE users SET password_hash = ?, password_changed_at = NOW() WHERE id = ?',
+        [password_hash($new, PASSWORD_BCRYPT, ['cost' => 12]), $userId],
+      );
+      // La sesión actual sigue abierta: toma la nueva fecha.
+      BaseModel::run(
+        'UPDATE user_sessions s JOIN users u ON u.id = s.user_id SET s.password_changed_at = u.password_changed_at WHERE s.id = ?',
+        [$sessionId],
+      );
+    }
+
+    private static function sendCookies(int $userId, int $sessionId, ?string $refreshToken): void
+    {
+      $now = time();
+      $ttl = (int) Env::get('JWT_TTL');
+      $accessToken = JWT::encode([
+        'sub' => $userId,
+        'sid' => $sessionId,
+        'iss' => Env::get('JWT_ISSUER'),
+        'iat' => $now,
+        'exp' => $now + $ttl,
+      ], Env::get('JWT_SECRET'), 'HS256');
+
+      setcookie('access_token', $accessToken, self::cookieOptions($now + $ttl, '/'));
+      if ($refreshToken !== null) {
+        setcookie('refresh_token', $refreshToken, self::cookieOptions($now + (int) Env::get('SESSION_MAX_TTL'), self::refreshPath()));
+      }
+    }
+
+    private static function clearCookies(): void
+    {
+      setcookie('access_token', '', self::cookieOptions(1, '/'));
+      setcookie('refresh_token', '', self::cookieOptions(1, self::refreshPath()));
+    }
+
+    // El token de renovación sólo viaja a /auth: ningún otro endpoint lo recibe.
+    private static function refreshPath(): string
+    {
+      return rtrim(Env::get('API_BASE_PATH'), '/') . '/auth';
+    }
+
+    /** @return array<string, mixed> */
+    private static function cookieOptions(int $expires, string $path): array
+    {
+      return ['expires' => $expires, 'path' => $path, 'secure' => true, 'httponly' => true, 'samesite' => 'Strict'];
+    }
+  }
+  ```
 - **Límite de intentos de inicio de sesión,** por IP **y** por usuario (por ejemplo, 5 en 15
   minutos), con 429 al superarlo.
 - **La misma respuesta para cualquier fallo de inicio de sesión:** usuario inexistente, cuenta
   inactiva o contraseña incorrecta dan el mismo 401 y el mismo mensaje, y todos cuentan como
   intento. Un mensaje distinto revela qué cuentas existen.
-- **Cerrar sesión:** el mismo `setcookie` con `'expires' => 1`, que hace que el navegador la
-  borre.
-- `'secure' => true` también funciona en `http://localhost`, que los navegadores tratan como
-  contexto seguro (no probado aquí: requiere un navegador).
-- En el frontend, el envío de la cookie y la redirección al login ante un 401 van en
-  `src/plugins/axios.js` (§4.3).
+- **En el frontend,** la renovación ante un 401 va en `src/plugins/axios.js` y el cierre por
+  inactividad en `useIdleSession` (§4.3).
 
 ### 6.3 Paginación
 
@@ -924,7 +1372,8 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 - **Fecha y hora: ISO 8601 en UTC, con `Z`** (`2026-10-11T22:03:00Z`). La BD las guarda en UTC
   (§7.1) y el Service las formatea en el propio SQL, igual en MySQL que en MariaDB (probado):
   `DATE_FORMAT(created_at, '%Y-%m-%dT%TZ') AS created_at`.
-- **Sólo fecha** (nacimiento, vigencia): `YYYY-MM-DD`, sin zona.
+- **Sólo fecha** (nacimiento, vigencia): `YYYY-MM-DD`, sin zona. El frontend la formatea en UTC
+  para no mostrar el día anterior (§4.3).
 - **Sin la `Z`, la hora se desplaza:** el navegador interpreta `2026-10-11 22:03:00` como hora
   local del equipo.
 - **Al recibir,** el backend acepta ISO 8601 con zona (`date.toISOString()` del frontend da
@@ -936,9 +1385,11 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 
 - **Orígenes permitidos en `CORS_ALLOWED_ORIGINS`** (§10), separados por comas. En la API,
   nunca `*`, que además el navegador rechaza cuando la petición lleva credenciales.
-- **`Core/Cors`** (probado):
+- **`Core/Cors`** (probado: un origen permitido recibe las cabeceras; uno no permitido y una
+  petición sin `Origin`, no). `array_filter` quita las entradas vacías: sin él, una coma al final
+  de la lista acepta las peticiones sin `Origin` (probado).
   ```php
-  $allowed = array_map('trim', explode(',', (string) getenv('CORS_ALLOWED_ORIGINS')));
+  $allowed = array_filter(array_map('trim', explode(',', Env::get('CORS_ALLOWED_ORIGINS'))));
   $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
   if (in_array($origin, $allowed, true)) {
@@ -954,7 +1405,8 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
     exit;
   }
   ```
-- **El preflight `OPTIONS` responde 204 sin cuerpo:** es la única respuesta sin envoltura.
+- **El preflight `OPTIONS` responde 204 sin cuerpo.** Con la entrega de un archivo privado
+  (§5.4), son las únicas respuestas sin la envoltura del §6.
 - **CORS no es control de acceso:** a un origen no permitido el servidor igual responde, sólo
   que sin esas cabeceras, y es el navegador el que bloquea la lectura. Lo que protege los
   datos es la autenticación (§6.2).
@@ -995,9 +1447,10 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
 ### 7.1 Motor, charset y conexión
 
 - **Motor:** el de producción (MySQL o MariaDB), en una versión LTS con soporte
-  (`endoflife.date/mariadb`, `endoflife.date/mysql`). El mismo motor y versión mayor en
-  local, en la CI y en producción; se declara en el `README.md` y en la imagen de la CI
-  (§14). Como en el §10, este documento no fija el número.
+  (`endoflife.date/mariadb`, `endoflife.date/mysql`). El mismo motor y la misma serie en
+  local, en la CI y en producción (por ejemplo, MariaDB 11.4 o MySQL 8.4: 11.4 y 11.8 son
+  series distintas aunque las dos sean "11"); se declara en el `README.md` y en la imagen de la
+  CI (§14). Como en el §10, este documento no fija el número.
 - **`utf8mb4` + `utf8mb4_unicode_ci`** en la base de datos, las tablas y la conexión. Es la
   collation común a los dos motores: la de MySQL 8 (`utf8mb4_0900_ai_ci`) no existe en
   MariaDB, y un respaldo que la use no se puede importar ahí. Además no distingue acentos
@@ -1013,19 +1466,61 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
   INSERT INTO users (email, full_name) VALUES (?, ?) AS new
     ON DUPLICATE KEY UPDATE full_name = new.full_name;
   ```
-- **Conexión en el `BaseModel`** (probada con MariaDB 10.4 y PHP 8.1):
+- **`Models/BaseModel.php`:** la conexión y la ejecución de consultas preparadas (probado con
+  MariaDB 10.4 y PHP 8.1):
   ```php
-  $pdo = new PDO(
-    sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', getenv('DB_HOST'), getenv('DB_PORT'), getenv('DB_NAME')),
-    (string) getenv('DB_USER'),
-    (string) getenv('DB_PASS'),
-    [
-      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-      PDO::ATTR_EMULATE_PREPARES => false,
-      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ],
-  );
-  $pdo->exec("SET time_zone = '+00:00'");
+  <?php
+
+  declare(strict_types=1);
+
+  namespace App\Models;
+
+  use App\Core\Env;
+  use PDO;
+
+  // Conexión y ejecución de consultas preparadas; no conoce ningún recurso (§5.2).
+  class BaseModel
+  {
+    private static ?PDO $pdo = null;
+
+    public static function pdo(): PDO
+    {
+      if (self::$pdo === null) {
+        self::$pdo = new PDO(
+          sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', Env::get('DB_HOST'), Env::get('DB_PORT'), Env::get('DB_NAME')),
+          Env::get('DB_USER'),
+          Env::get('DB_PASS'),
+          [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_EMULATE_PREPARES => false,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+          ],
+        );
+        self::$pdo->exec("SET time_zone = '+00:00'");
+      }
+
+      return self::$pdo;
+    }
+
+    /** @param list<mixed> $params */
+    public static function one(string $sql, array $params = []): ?array
+    {
+      $statement = self::pdo()->prepare($sql);
+      $statement->execute($params);
+      $row = $statement->fetch();
+
+      return $row === false ? null : $row;
+    }
+
+    /** @param list<mixed> $params */
+    public static function run(string $sql, array $params = []): int
+    {
+      $statement = self::pdo()->prepare($sql);
+      $statement->execute($params);
+
+      return $statement->rowCount();
+    }
+  }
   ```
   - `charset=utf8mb4` en el DSN: sin él, la conexión usa el charset por defecto del
     servidor, que puede no ser `utf8mb4`.
@@ -1033,25 +1528,31 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
   - `EMULATE_PREPARES` en `false`: las consultas preparadas las resuelve el motor, no PHP.
   - Sesión en UTC: un `DATETIME` guarda la hora tal cual, así que la zona de la sesión que
     escribe define qué significa. Fijada en UTC, siempre significa lo mismo.
-- **La app nunca se conecta como `root`.** Tiene su propio usuario, sólo con permisos sobre
-  los datos de su base; las migraciones usan otro que además puede cambiar el esquema
-  (probado con MariaDB 10.4: el usuario de la app lee y escribe, pero no puede crear ni borrar
-  tablas ni leer otras bases):
+- **La app nunca se conecta como `root`.** Tiene su propio usuario (`DB_USER`), sólo con
+  permisos sobre los datos de su base; las migraciones usan otro (`DB_MIGRATIONS_USER`) que
+  además puede cambiar el esquema (probado con MariaDB 10.4: el usuario de la app lee y
+  escribe, pero no puede crear ni borrar tablas ni leer otras bases):
   ```sql
-  CREATE USER 'app'@'localhost' IDENTIFIED BY '<contraseña larga>';
-  GRANT SELECT, INSERT, UPDATE, DELETE ON app.* TO 'app'@'localhost';
+  CREATE USER 'app'@'127.0.0.1' IDENTIFIED BY '<contraseña larga>';
+  GRANT SELECT, INSERT, UPDATE, DELETE ON app.* TO 'app'@'127.0.0.1';
 
-  CREATE USER 'app_migrations'@'localhost' IDENTIFIED BY '<otra contraseña larga>';
-  GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON app.* TO 'app_migrations'@'localhost';
+  CREATE USER 'app_migrations'@'127.0.0.1' IDENTIFIED BY '<otra contraseña larga>';
+  GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON app.* TO 'app_migrations'@'127.0.0.1';
   ```
-  `root` tiene contraseña, también en local.
+  - En local, los dos usuarios reciben además los mismos permisos sobre `app_test.*`, la BD de
+    los tests (§5.3).
+  - El host de la cuenta es el de `DB_HOST`. Con `DB_HOST=127.0.0.1`, una cuenta
+    `'app'@'localhost'` falla si el motor tiene `skip-name-resolve` (probado), algo común en
+    servidores de producción; `'app'@'127.0.0.1'` funciona con y sin esa opción (probado).
+  - `root` tiene contraseña, también en local.
 - **El motor sólo escucha en local:** `bind-address=127.0.0.1` en `my.ini` (o `my.cnf`), salvo
   que la BD viva en otro servidor, y entonces sólo para la IP de la app.
 
 ### 7.2 Migraciones
 
-- **Phinx** (`composer require --dev robmorgan/phinx`), con las migraciones en
-  `database/migrations/` y los datos iniciales en `database/seeds/`.
+- **Phinx**, en versión exacta por ser 0.x (§11): `composer require --dev robmorgan/phinx:0.16.12`
+  (la vigente al escribir esto). Las migraciones van en `database/migrations/` y los datos
+  iniciales en `database/seeds/`.
 - **Una migración aplicada nunca se edita:** todo cambio al esquema es una migración nueva.
   Phinx registra en cada BD cuáles ya se aplicaron (tabla `phinxlog`).
 - **Nombres:** `vendor/bin/phinx create CreateUserProfiles` crea
@@ -1061,11 +1562,20 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
   renombra (principio 3).
 - **Cada columna lleva `'null' => false`** salvo que deba aceptar `NULL`: si no se indica,
   Phinx la crea opcional.
-- **`phinx.php`** en la raíz (probado con Phinx 0.16):
+- **`phinx.php`** en la raíz (probado con Phinx 0.16: con el `.env` en local, sin él en la CI,
+  y deteniéndose con un mensaje claro si falta una variable). Carga el `.env` igual que la API y
+  usa el usuario de migraciones, el único que puede cambiar el esquema (§7.1):
   ```php
   <?php
 
-  // Configuración de migraciones: lee la conexión del entorno (§10), nunca del repo.
+  declare(strict_types=1);
+
+  use App\Core\Env;
+
+  // Configuración de migraciones: lee la conexión del entorno (§10), nunca del repo. Usa el
+  // usuario de migraciones, el único que puede cambiar el esquema (§7.1).
+  Env::load(__DIR__);
+
   return [
     'paths' => [
       'migrations' => __DIR__ . '/database/migrations',
@@ -1076,11 +1586,11 @@ existente que no cumpla alguna regla de esta sección (por ejemplo, `?id=7` en l
       'default_environment' => 'local',
       'local' => [
         'adapter' => 'mysql',
-        'host' => getenv('DB_HOST') ?: '127.0.0.1',
-        'port' => (int) (getenv('DB_PORT') ?: 3306),
-        'name' => getenv('DB_NAME'),
-        'user' => getenv('DB_USER'),
-        'pass' => getenv('DB_PASS') ?: '',
+        'host' => Env::get('DB_HOST'),
+        'port' => (int) Env::get('DB_PORT'),
+        'name' => Env::get('DB_NAME'),
+        'user' => Env::get('DB_MIGRATIONS_USER'),
+        'pass' => Env::get('DB_MIGRATIONS_PASS'),
         'charset' => 'utf8mb4',
         'collation' => 'utf8mb4_unicode_ci',
       ],
@@ -1194,20 +1704,32 @@ horizontal, en `md`.
 
 - Frontend: prefijo obligatorio `VITE_` (Vue 3) o `VUE_APP_` (Vue 2). El build sólo expone al
   bundle las variables con ese prefijo; por lo mismo, **ningún secreto** lleva ese prefijo:
-  todo lo que entra al bundle lo puede leer cualquier visitante.
-- Backend: `.env` con `API_BASE_PATH`, `DB_*`, `MAIL_*` y:
+  todo lo que entra al bundle lo puede leer cualquier visitante. Con el prefijo del stack:
+  - `API_SERVER`: URL base de la API (§4.3).
+  - `MULTIMEDIA_URL`: URL base de los archivos públicos subidos (§5.4).
+  - `SESSION_IDLE_TTL`: la misma inactividad permitida que en el backend, en segundos (§4.3).
+- Backend: `.env` con estas variables, todas obligatorias (`.env.example` las lista sin valores
+  reales):
+  - `API_BASE_PATH`: ruta de la API en el servidor (`/api`). El token de renovación viaja sólo a
+    `<API_BASE_PATH>/auth` (§6.2).
+  - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASS`: la conexión de la app (§7.1).
+  - `DB_MIGRATIONS_USER` y `DB_MIGRATIONS_PASS`: el usuario que puede cambiar el esquema (§7.2).
   - `JWT_SECRET`: al menos 256 bits, generado con `php -r "echo bin2hex(random_bytes(32));"`
     y distinto en cada entorno (§6.2).
-  - `JWT_TTL`: duración de la sesión en segundos, máximo 28800 (8 horas).
-  - `CORS_ALLOWED_ORIGINS`: orígenes del frontend separados por comas (§6.5).
   - `JWT_ISSUER`: el emisor de los tokens, por ejemplo la URL de la API (§6.2).
+  - `JWT_TTL`: vida del token de acceso en segundos, máximo 900 (15 minutos).
+  - `SESSION_IDLE_TTL`: inactividad permitida en segundos (por ejemplo, 420: 7 minutos).
+  - `SESSION_MAX_TTL`: límite absoluto de la sesión en segundos, máximo 28800 (8 horas).
+  - `CORS_ALLOWED_ORIGINS`: orígenes del frontend separados por comas (§6.5).
+  - `MAIL_*`, si el proyecto envía correo.
 - **Backend:** `.env` y sus respaldos (`.env.*.bak`) **fuera de git**, porque tienen secretos;
   se versiona sólo `.env.example`.
 - **Frontend:** los archivos de cada modo (`.env.development`, `.env.production`) **se
   versionan**: por la regla de arriba sólo contienen valores públicos, y la CI los necesita
-  para compilar. Los `*.local` (`.env.local`, `.env.production.local`) son los ajustes
-  personales de cada equipo y quedan fuera de git. Un valor que no se puede publicar no va
-  en el frontend.
+  para compilar. Cualquier otro (`.env`, `.env.local`, `.env.staging`) queda fuera de git
+  (§11). Un valor que no se puede publicar no va en el frontend. Un escáner de secretos que
+  busca archivos por nombre los reporta; la prueba de que sólo tienen valores públicos es el
+  paso de la CI del §14.
 - `.env` **nunca dentro de la raíz web** (§5.2): lo que está ahí se puede pedir por URL.
 - Ningún secreto ni cadena de conexión en el repositorio.
 - **Ninguna credencial de producción en el `.env` local,** ni siquiera comentada: cada entorno
@@ -1218,6 +1740,80 @@ horizontal, en `md`.
   - `php.ini`: `display_errors=Off`, `display_startup_errors=Off`, `log_errors=On`,
     `expose_php=Off`.
   - `httpd.conf`: `ServerTokens Prod` y `ServerSignature Off`.
+
+### Carga del entorno
+
+Toda la configuración del backend se lee con `Core/Env.php`, nunca con `getenv()` o `$_ENV`
+directo:
+
+- **Funciona igual en todos los contextos** (probado): la API, `phinx`, PHPUnit con el `DB_NAME`
+  forzado y la CI sin `.env`. Con `vlucas/phpdotenv`, `createImmutable()` llena `$_ENV` y
+  `$_SERVER`, pero no `getenv()` (probado: devuelve `false`); y en la CI, con el `php.ini` de
+  producción, las variables del entorno llegan a `$_SERVER` y a `getenv()`, pero no a `$_ENV`
+  (probado). `Env::get()` revisa los tres.
+- **Falla cerrado en un solo lugar:** una variable que falta o está vacía detiene la ejecución
+  con un mensaje que dice cuál, nunca su valor (probado).
+- **El `.env` no sobrescribe lo que ya trae el entorno:** así la CI y `phpunit.xml` mandan sobre
+  el archivo (§5.3).
+- `composer require vlucas/phpdotenv`.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Core;
+
+use Dotenv\Dotenv;
+use RuntimeException;
+
+// Único punto de lectura de la configuración (§10). Falla cerrado: una variable que falta o
+// está vacía detiene la ejecución; nunca hay valor por defecto.
+final class Env
+{
+  // Carga el .env si existe, sin sobrescribir lo que ya trae el entorno (la CI, phpunit.xml).
+  public static function load(string $dir): void
+  {
+    Dotenv::createImmutable($dir)->safeLoad();
+  }
+
+  public static function get(string $name): string
+  {
+    $value = $_ENV[$name] ?? $_SERVER[$name] ?? getenv($name);
+
+    if (!is_string($value) || $value === '') {
+      throw new RuntimeException("Falta la variable de entorno {$name}.");
+    }
+
+    return $value;
+  }
+
+  // Detiene el arranque si falta alguna: así un error de configuración aparece al desplegar,
+  // no en la primera petición que la usa.
+  /** @param list<string> $names */
+  public static function require(array $names): void
+  {
+    foreach ($names as $name) {
+      self::get($name);
+    }
+  }
+}
+```
+
+El bootstrap (`public/index.php`) comprueba al arrancar todas las variables que usa, para que un
+error de configuración aparezca al desplegar y no en la primera petición que la necesita:
+
+```php
+require __DIR__ . '/../vendor/autoload.php';
+
+Env::load(__DIR__ . '/..');
+Env::require([
+  'API_BASE_PATH', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS',
+  'JWT_SECRET', 'JWT_ISSUER', 'JWT_TTL', 'SESSION_IDLE_TTL', 'SESSION_MAX_TTL', 'CORS_ALLOWED_ORIGINS',
+]);
+```
+
+`phinx.php` (§7.2) y `tests/bootstrap.php` (§5.3) cargan el `.env` con el mismo `Env::load()`.
 
 ### Versiones de runtime
 
@@ -1234,7 +1830,7 @@ Este documento no fija números de versión: caducarían. Fija cómo se eligen.
   - **La versión que corre** (en local, en la CI y en producción): `.nvmrc` (por ejemplo,
     `24`) y `.php-version` (por ejemplo, `8.4`) en la raíz. La CI la lee de ahí (§14).
   - **El rango de compatibilidad:** `"require": { "php": "^8.4" }` en `composer.json` y
-    `"engines": { "node": ">=22.13" }` en `package.json`.
+    `"engines": { "node": "^22.13.0 || >=24" }` en `package.json` (el rango de `neostandard`).
 - **En local se usa la misma versión menor que en producción.** Desarrollar con una versión
   más nueva permite usar sintaxis que el servidor no entiende.
 - **Un proyecto existente en una versión sin parches de seguridad** lo declara en su
@@ -1256,21 +1852,32 @@ con especificación pública, permite generar changelogs y versionado semántico
 - `.gitignore` obligatorio: `node_modules/`, `vendor/`, `dist/`, `.php-cs-fixer.cache`,
   `.phpunit.cache/`, `.phpunit.result.cache`, logs y respaldos. Además:
   - Backend: `.env*` con la excepción `!.env.example`, y los archivos subidos (§5.4):
-    `public/multimedia/**` con la excepción `!public/multimedia/.htaccess`, y `storage/`.
-  - Frontend: `*.local` (§10).
+    `public/multimedia/**` con la excepción `!public/multimedia/.htaccess`, y `storage/**`
+    con la excepción `!storage/.htaccess`. Con `storage/` a secas, git tampoco puede versionar
+    el `.htaccess` que protege la carpeta en un backend existente (probado).
+  - Frontend: rechazo por defecto, con excepciones explícitas (probado: `.env`, `.env.local`,
+    `.env.production.local` y `.env.staging` quedan fuera; `.env.development` y
+    `.env.production`, dentro):
+    ```
+    .env
+    .env.*
+    !.env.development
+    !.env.production
+    ```
   - Ambos, por patrón y no por nombre (probado: ignora respaldos con cualquier nombre, en
     mayúsculas o comprimidos): `*.sql`, `*.sql.gz`, `*.dump`, `*.pem`, `*.key`, `id_rsa*`. Un
-    proyecto con migraciones SQL numeradas las conserva con
-    `!bd_migrations/[0-9][0-9][0-9]_*.sql`.
+    proyecto existente con migraciones SQL numeradas (excepción al §7.2, declarada en su
+    `README.md`) las conserva con una excepción al patrón: `!<carpeta>/[0-9][0-9][0-9]_*.sql`.
 - **Si un secreto o un respaldo llegó a git:** se cambian todas las credenciales expuestas,
   se purga del historial (`git filter-repo`) y se verifica con un clon limpio desde GitHub,
   no con la copia local. Borrarlo en un commit nuevo no basta: sigue en el historial.
 - **`package-lock.json` y `composer.lock` se versionan:** `npm ci` y `composer install`
   instalan exactamente esas versiones, en local y en la CI.
 - **Versiones en `package.json` y `composer.json`:** las bibliotecas con `^`, para recibir
-  parches de seguridad al actualizar (el lockfile fija la versión exacta instalada). Versión
-  exacta sólo en herramientas 0.x, donde una versión menor puede romper la configuración
-  (como `neostandard`, §14).
+  parches de seguridad al actualizar (el lockfile fija la versión exacta instalada). Toda
+  dependencia 0.x va en versión exacta (`neostandard`, §14; Phinx, §7.2): en 0.x, semver no
+  promete compatibilidad ni entre parches. `^0.14.0` ya impide pasar a 0.15, pero no de 0.14.0
+  a 0.14.1, y los auditores de dependencias marcan `^0.x` como rango inestable.
 - **Sin archivos-respaldo en el repo:** `index 2024-03-15.js`, `main v1.js`, `api_legacy/`.
   Un respaldo es código que ya no se ejecuta; para conservarlo se usa un tag o una rama.
   Si las dos versiones se ejecutan durante una migración, ver `legacy/` en §4.3.
@@ -1281,7 +1888,22 @@ con especificación pública, permite generar changelogs y versionado semántico
 
 - Comentarios en español, explicando el **por qué**, no el qué.
 - Cada servicio PHP abre con un bloque que documenta su contrato y el archivo del frontend
-  que lo consume (ver la plantilla `ExamplesService` del §16).
+  que lo consume. Es lo primero que lleva la plantilla `ExamplesService` (§16):
+  ```php
+  /**
+   * /examples — plantilla del contrato de un recurso (§6).
+   *
+   * GET    /examples                 lista paginada (?page, ?per_page)
+   * GET    /examples?type=summary    resumen por estado
+   * GET    /examples/{id}            un elemento
+   * POST   /examples                 crea (201)
+   * PATCH  /examples/{id}            actualiza los campos enviados
+   * DELETE /examples/{id}            borra
+   *
+   * Acceso: authorize('examples.read') para leer y authorize('examples.write') para escribir.
+   * Lo consume: src/services/examplesService.js
+   */
+  ```
 - Cada endpoint lleva un comentario con su firma sobre la línea del `$router->add(...)`.
 - `README.md` por repo: instalación, ejecución, variables de entorno necesarias, las
   excepciones a esta convención con su motivo ("Cómo se usa este documento", §13) y los
@@ -1298,6 +1920,8 @@ Un estándar sólo sirve si las excepciones son explícitas. Éstas son las nues
 | PER Coding Style | Indentación de **2 espacios** en PHP, no 4 | Coherencia con el frontend (`.editorconfig` usa 2). Una sola configuración de editor para todo el stack. |
 | PSR-1 y PSR-4 | Un backend **existente sin namespaces** puede seguir con `require_once` y carpetas en minúsculas hasta migrar; lo declara en su `README.md`. **Todo backend nuevo usa namespaces.** | Migrar a namespaces toca cada archivo del backend: se hace como tarea propia, no de pasada en otro cambio. |
 | Google JSON Style Guide | Campos JSON en snake_case, no camelCase | Coherencia con las columnas de la BD. Evita mapeo en el backend y en el frontend: un campo se llama igual en la BD, la API y Vue. |
+| RFC 9110 | Un 401 de la sesión por cookie no lleva `WWW-Authenticate` (con Bearer sí, §6.1) | La norma exige un esquema en esa cabecera, y no hay uno registrado para cookies. |
+| NIST SP 800-63B-4 | Contraseñas de máximo 72 bytes (§5.5): con acentos, menos de los 64 caracteres que recomienda | Es el límite de bcrypt, disponible en todo PHP. `PASSWORD_ARGON2ID` no lo tiene, pero depende de cómo se compiló PHP en el servidor. |
 | Raíz web en `public/` (§5.2) | Un backend **existente** que sirve desde la raíz del repo puede seguir así si usa el `.htaccess` raíz del §5.2 (bloquea cualquier segmento oculto, como `.git/` y `.env`, además de `vendor/`, `composer.*` y respaldos) y pasa la comprobación del §14; lo declara en su `README.md`. **Todo backend nuevo usa `public/`.** | Mover la raíz web cambia la configuración del servidor en cada entorno. Mientras tanto la protección depende del `.htaccess`, y por eso se comprueba. |
 
 ## 14. Herramientas que hacen cumplir esto
@@ -1341,7 +1965,9 @@ En Vue 3 se activan además a mano dos reglas que `recommended` no cubre:
 `vue/define-macros-order` obliga a que `defineProps` y `defineEmits` vayan justo después
 de los `import`, y `vue/block-order` con `<script>` primero aplica el orden del §4.4
 (`recommended` sólo exige `<style>` al final). En Vue 2 la misma regla se configura con
-`['template', 'script', 'style']`; con el plugin v8 se llama `vue/component-tags-order`.
+`['template', 'script', 'style']`; con el plugin v8 se llama `vue/component-tags-order`
+(probado con eslint-plugin-vue 8.7: marca un `<script>` antes del `<template>`):
+`'vue/component-tags-order': ['error', { order: ['template', 'script', 'style'] }]`.
 Los pasos 3 a 8 del orden interno (§4.4) **no los valida ninguna regla de ESLint**: se
 revisan a mano. Lo mismo ocurre con las constantes (§4.3): Standard acepta tanto
 `MAX_LENGTH` como `maxLength` en cualquier lugar y sólo rechaza mezclas como `Max_Value`;
@@ -1377,8 +2003,9 @@ export default defineConfig([
 - **Por qué `neostandard`:** es el sucesor de Standard con flat config y el único compatible
   con ESLint 10. `eslint-config-standard` sólo admite ESLint 8 y `@vue/eslint-config-standard`
   sólo ESLint 9.
-- **Versión exacta en `package.json`** (`"neostandard": "0.14.0"`, sin `^`): al ser 0.x, una
-  versión menor puede romper la configuración. Se actualiza a propósito, no de pasada.
+- **Versión exacta en `package.json`** (`"neostandard": "0.14.0"`, sin `^`): es 0.x (§11), y
+  además decide qué código pasa la revisión. Una actualización silenciosa haría fallar la CI
+  sin que el código cambie. Se actualiza a propósito, no de pasada.
 - **Requiere Node `^22.13.0 || >=24`.**
 - **Difiere de Standard en tres reglas:** `comma-dangle` es advertencia, `dot-notation` está
   desactivada y `no-multi-spaces` tolera comentarios al final de la línea.
@@ -1472,14 +2099,16 @@ git. Sin él, git en Windows puede convertir a CRLF aunque el editor use LF.
 ### Hooks de git
 
 Dos hooks nativos en `.githooks/`, en la raíz del repo, idénticos en todos los repos y sin
-dependencias (probados con Git para Windows).
+dependencias (probados con Git para Windows). Se versionan y se revisan como cualquier otro
+código: un escáner de seguridad que reporte `core.hooksPath` se responde mostrando que apunta a
+esa carpeta versionada.
 
 `.githooks/pre-commit` ejecuta la revisión de las herramientas que tenga el proyecto, ya sea
 que viva en la raíz del repo o en una carpeta de primer nivel (`vue2/`, `api/`):
 
 ```sh
 #!/bin/sh
-# Revisa la convención antes de cada commit (§14). La CI repite la revisión.
+# Revisa el estilo del código antes de cada commit (§14). La CI repite la revisión.
 # Busca el proyecto en la raíz del repo y en sus carpetas de primer nivel (vue2/, api/).
 set -e
 for dir in . */; do
@@ -1519,7 +2148,10 @@ dependencias:
   `"scripts": { "post-install-cmd": "git config core.hooksPath .githooks || exit 0" }`.
   `composer install` lo ejecuta.
 
-El `|| exit 0` evita que la instalación falle en una copia sin git, por ejemplo un ZIP.
+El `|| exit 0` evita que la instalación falle en una copia sin git, por ejemplo un ZIP: sin
+repositorio no hay commits que revisar. Como sí podría ocultar una activación fallida (por
+ejemplo, sin `git` en el PATH), se comprueba una vez después de instalar, como pide el
+principio 9: `git config core.hooksPath` debe responder `.githooks`.
 
 - **Permiso de ejecución.** Desde Windows los hooks se guardan sin él, y Linux y macOS los
   ignoran. Al crearlos: `git update-index --chmod=+x .githooks/pre-commit .githooks/commit-msg`.
@@ -1543,12 +2175,14 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -1557,8 +2191,14 @@ jobs:
       - name: .env versionados sólo con variables públicas (§10)
         run: |
           files=$(git ls-files '.env*')
-          if [ -n "$files" ] && grep -HnvE '^[[:space:]]*(#|$)|^(VITE_|VUE_APP_)[A-Z0-9_]+=|^(NODE_ENV|BASE_URL)=' $files; then
+          [ -z "$files" ] && exit 0
+          status=0
+          grep -HnvE '^[[:space:]]*(#|$)|^(VITE_|VUE_APP_)[A-Z0-9_]+=|^(NODE_ENV|BASE_URL)=' $files || status=$?
+          if [ "$status" -eq 0 ]; then
             echo "Un .env versionado define variables que no son públicas (§10)." >&2
+            exit 1
+          elif [ "$status" -gt 1 ]; then
+            echo "No se pudieron revisar los .env versionados (grep terminó con $status)." >&2
             exit 1
           fi
       - run: npm audit --omit=dev --audit-level=high
@@ -1574,12 +2214,14 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   backend:
     runs-on: ubuntu-latest
     services:
       db:
-        image: mariadb:11.4   # el motor y la versión de producción (§7.1)
+        image: mariadb:11.4   # el motor y la serie de producción (§7.1)
         env:
           MARIADB_ROOT_PASSWORD: ci
           MARIADB_DATABASE: app_test
@@ -1589,14 +2231,24 @@ jobs:
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s --health-timeout=5s --health-retries=10
     env:
+      API_BASE_PATH: /api
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       DB_NAME: app_test
       DB_USER: root
       DB_PASS: ci
+      DB_MIGRATIONS_USER: root
+      DB_MIGRATIONS_PASS: ci
+      JWT_ISSUER: http://localhost/api
+      JWT_TTL: 5
+      SESSION_IDLE_TTL: 8
+      SESSION_MAX_TTL: 20
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
     steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2   # lee la versión de .php-version
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962   # v2; lee la versión de .php-version
+      - name: Secreto de JWT sólo para esta ejecución
+        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: composer install --no-interaction --no-progress
       - run: composer audit
       - run: vendor/bin/php-cs-fixer check --diff
@@ -1604,18 +2256,29 @@ jobs:
       - run: vendor/bin/phpunit
 ```
 
+- **Acciones fijadas por SHA,** con la versión en un comentario. Una etiqueta (`@v7`) la puede
+  mover quien controla la acción, y un SHA no. Para actualizar, se cambian juntos el SHA y el
+  comentario, con el SHA del commit de la etiqueta:
+  `git ls-remote https://github.com/actions/checkout 'refs/tags/v7*'`. En una etiqueta anotada
+  se usa la línea que termina en `^{}`.
+- **`permissions: contents: read`:** el token del workflow sólo puede leer el repo.
 - **Tests:** el frontend corre todos (`npm test`). El backend levanta un contenedor con el
   motor de producción, aplica las migraciones y corre los grupos `unit` y `database` (§5.3).
+  `app_test` es el mismo `<proyecto>_test` del `phpunit.xml`.
 - **Auditoría de dependencias:** `npm audit --omit=dev --audit-level=high` y `composer audit`
   hacen fallar la CI ante una vulnerabilidad conocida (en npm, sólo las altas de producción;
   probados en local, terminan en 0 sin hallazgos).
 - **`.env` del frontend:** el paso revisa sólo los archivos versionados y falla si alguno
-  define algo distinto de `VITE_*`, `VUE_APP_*`, `NODE_ENV` o `BASE_URL` (probado: pasa con
-  variables públicas, detiene un `DEPLOY_PUBLIC_PATH` y no revisa los `*.local`). Un proyecto
-  que necesite otra variable de build la agrega a la expresión y la declara en su `README.md`.
+  define algo distinto de `VITE_*`, `VUE_APP_*`, `NODE_ENV` o `BASE_URL`. Si `grep` no puede
+  revisarlos, también falla (principio 9). Probado: pasa sin `.env` versionados y con variables
+  públicas; detiene un `DEPLOY_PUBLIC_PATH`, un nombre con espacios y un archivo versionado que
+  falta en disco. La versión anterior de este paso daba "limpio" en los dos últimos casos. Un
+  proyecto que necesite otra variable de build la agrega a la expresión y la declara en su
+  `README.md`.
 - **La BD de la CI** sólo existe mientras corre el workflow: su contraseña (`ci`) no es un
-  secreto. Con MySQL, la imagen es `mysql:<versión>`, las variables `MYSQL_ROOT_PASSWORD` y
-  `MYSQL_DATABASE`, y la comprobación `mysqladmin ping -h 127.0.0.1`.
+  secreto, y ahí la app y las migraciones usan `root`. Con MySQL, la imagen es
+  `mysql:<versión>`, las variables `MYSQL_ROOT_PASSWORD` y `MYSQL_DATABASE`, y la comprobación
+  `mysqladmin ping -h 127.0.0.1`.
 - **El frontend también compila** (`npm run build`): el lint revisa estilo, el build revisa
   que el proyecto funcione en Linux.
 - **La versión sale del proyecto** (`.nvmrc`, `.php-version`; §10), no del workflow.
@@ -1632,7 +2295,8 @@ jobs:
   `package.json` de `vue2/` los activa igual (probado, también con commits hechos desde la
   subcarpeta).
 - En la CI, `defaults.run.working-directory` cubre los pasos `run`, pero no los `uses`: las
-  acciones reciben la ruta completa (no probado en GitHub):
+  acciones reciben la ruta completa. Los pasos son los mismos del workflow de arriba (no
+  probado en GitHub):
   ```yaml
   jobs:
     frontend:
@@ -1641,18 +2305,34 @@ jobs:
         run:
           working-directory: vue2
       steps:
-        - uses: actions/checkout@v7
-        - uses: actions/setup-node@v7
+        - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+        - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7
           with:
             node-version-file: vue2/.nvmrc
             cache: npm
             cache-dependency-path: vue2/package-lock.json
         - run: npm ci
         - run: npm run lint
+        - name: .env versionados sólo con variables públicas (§10)
+          run: |
+            files=$(git ls-files '.env*')
+            [ -z "$files" ] && exit 0
+            status=0
+            grep -HnvE '^[[:space:]]*(#|$)|^(VITE_|VUE_APP_)[A-Z0-9_]+=|^(NODE_ENV|BASE_URL)=' $files || status=$?
+            if [ "$status" -eq 0 ]; then
+              echo "Un .env versionado define variables que no son públicas (§10)." >&2
+              exit 1
+            elif [ "$status" -gt 1 ]; then
+              echo "No se pudieron revisar los .env versionados (grep terminó con $status)." >&2
+              exit 1
+            fi
+        - run: npm audit --omit=dev --audit-level=high
         - run: npm test
         - run: npm run build
   ```
-  Para un backend con `composer.json` dentro de `api/`, igual: `working-directory: api`.
+- Para un backend con `composer.json` dentro de `api/`: `working-directory: api`, y
+  `setup-php` recibe `php-version-file: api/.php-version`. Sin eso, según su documentación,
+  instala la versión estable más reciente y no la del proyecto, sin avisar.
 
 ---
 
@@ -1665,7 +2345,7 @@ jobs:
 | Fecha de edición en el nombre (`index 2024-03-15.js`) | Historial de git |
 | Componentes de una sola palabra (`Counter.vue`) | 2+ palabras (Vue-A): `VisitCounter.vue` |
 | Sufijo `Comp` en todos los componentes | Esquema `Base` / `The` / prefijo del padre (Vue-B) |
-| Prefijo `store` dentro de `stores/`, `routes` dentro de `router/` | `notifications.js`, `dashboard.js` |
+| Prefijo o sufijo `store` dentro de `stores/`, `routes` dentro de `router/` | `notifications.js`, `dashboard.js` |
 | `.` como separador de palabras (`user.settings.json`) | `-` o el casing del tipo (`user-settings.json`, `UserSettings.vue`) |
 | Doble extensión (`BarChart.js.js`) | Una extensión |
 | Acentos, `ñ` o mayúsculas en carpetas, URLs y assets | ASCII minúsculas con guiones (salvo carpetas de clases PSR-4, §5.2) |
@@ -1675,9 +2355,15 @@ jobs:
 | Exponer errores internos en la respuesta | Log + mensaje genérico |
 | HTTP 200 con `"success": false` | El código HTTP real en `status` (§6) |
 | Token de sesión en `localStorage` | Cookie `httpOnly` (§6.2) |
+| Token de sesión de horas, sin renovación | Token de acceso de 15 minutos como máximo y renovación de un solo uso (§6.2) |
+| Permisos dentro del token | Leídos de la BD en cada petición (§5.5) |
+| Cierre de sesión por inactividad sólo en el navegador | También en el servidor, con `SESSION_IDLE_TTL` (§6.2) |
+| Leer la configuración con `getenv()` o `$_ENV` directo | `Env::get()` (§10) |
+| Una clave `UNIQUE` repetida que termina en 500 | 409 con `errors` (§6) |
+| Una acción de la CI fijada por etiqueta (`@v7`) | Fijada por SHA, con la versión en un comentario (§14) |
 | Fechas sin zona en la API (`2026-10-11 22:03:00`) | ISO 8601 en UTC con `Z` (§6.4) |
 | CORS con `*` en la API | Orígenes en `CORS_ALLOWED_ORIGINS` (§6.5) |
-| Proteger un endpoint sólo con `authenticate()` | `authorize(módulo, nivel)` (§5.5) |
+| Proteger con `authenticate()` un endpoint que no es de la propia cuenta | `authorize('<permiso>')` (§5.5) |
 | Nombres de columna, placeholders u `ORDER BY` que salen de la petición | Sólo valores como parámetros; `SqlIn` y listas fijas (§5.5) |
 | Copiar una función de seguridad en otro archivo | Un solo helper compartido (§5.5) |
 | `v-html` o `:href` con datos de la API sin sanear | `safeHtml` y `safeUrl` (§4.3) |
@@ -1703,23 +2389,28 @@ jobs:
 3. Versiones de runtime (§10): `.nvmrc` / `.php-version` con la versión que corre, y
    `engines.node` / `require.php` con el rango de compatibilidad.
 4. Hooks y CI del §14 desde el primer commit: `.githooks/` (ejecutables y activados por
-   `prepare` o `post-install-cmd`) y `.github/workflows/ci.yml`.
-5. Frontend: Vue 3 + Vite + Pinia, componentes con Composition API y `<script setup>`, y
-   desde el día uno el `eslint.config.js` del §14 tal cual, con `neostandard` en versión
-   exacta y el script `"lint": "eslint ."`. Si usa Vuetify, sus breakpoints alineados con
-   el §8.1.
+   `prepare` o `post-install-cmd`; `git config core.hooksPath` responde `.githooks`) y
+   `.github/workflows/ci.yml`.
+5. Frontend: se crea con `npm create vue@latest`, la plantilla oficial, que trae Vite y el
+   alias `@`; en sus preguntas se eligen Pinia, Vue Router y Vitest. Componentes con
+   Composition API y `<script setup>`, y desde
+   el día uno el `eslint.config.js` del §14 tal cual, con `neostandard` en versión exacta y el
+   script `"lint": "eslint ."`. Si usa Vuetify, sus breakpoints alineados con el §8.1.
 6. Backend: PHP-CS-Fixer con `@PER-CS3x0` (§14), **namespaces PSR-4** y **`public/` como raíz web**
    desde el día uno.
-7. Backend: `Core/` completo (`Router`, `Request`, `Response`, `Cors`, `BaseController` y
-   `Exceptions/`) antes del primer endpoint.
-8. Frontend: `src/services/` con la URL base desde `VITE_API_SERVER` antes de la primera llamada.
+7. Backend: `Core/` completo (`Router`, `Request`, `Response`, `Cors`, `BaseController`, `Env`
+   y `Exceptions/`) antes del primer endpoint, con el bootstrap que comprueba las variables
+   de entorno (§10).
+8. Frontend: `src/plugins/axios.js` (la instancia `api`, con la URL base de `VITE_API_SERVER`,
+   §4.3) y `src/services/` antes de la primera llamada.
 9. Un `examples.routes.php` + `ExamplesController` + `ExamplesService` como plantilla del contrato.
 10. Tests desde el día uno (§4.5, §5.3): la configuración y un primer test que pase, para
     que agregar el siguiente sea copiar uno existente.
 11. Backend: base de datos desde el día uno (§7): el `BaseModel` con la conexión del §7.1, y
     `phinx.php` con una primera migración (§7.2).
-12. Sesión y CORS antes del primer endpoint protegido: `AuthMiddleware` con la cookie del
-    §6.2 y `Core/Cors` del §6.5 en el backend; `src/plugins/axios.js` del §4.3 en el frontend.
+12. Sesión y CORS antes del primer endpoint protegido: `user_sessions`, `AuthService` y
+    `AuthMiddleware` del §6.2, y `Core/Cors` del §6.5, en el backend; la renovación de
+    `src/plugins/axios.js` y `useIdleSession` en el layout con sesión, en el frontend (§4.3).
 13. Antes del primer endpoint que reciba archivos (§5.4): `Core/FileUpload.php`, la detección
     del 413 en el Core y el `.htaccess` de `public/multimedia/`.
 14. Seguridad desde el día uno (§5.5, §7.1, §10): `Core/SqlIn.php`, las cabeceras de la API,
@@ -1732,6 +2423,7 @@ jobs:
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 3.0.0 | 2026-10-12 | **Mayor:** cambia el modelo de sesión. Token de acceso de 15 minutos como máximo con renovación de un solo uso, ambos en cookies `httpOnly`; estado en `user_sessions`, revisado en cada petición (cierre, cambio de contraseña, usuario desactivado, inactividad del lado del servidor y límite absoluto); permisos leídos de la BD; sin `aud`, a propósito (§6.2). Frontend con renovación ante un 401 y `useIdleSession` (§4.3). `Core/Env.php` para leer la configuración en todos los contextos, con fallo cerrado (§10); `phinx.php` con el usuario de migraciones y sin valores por defecto (§7.2); `tests/bootstrap.php` (§5.3); `BaseModel` completo (§7.1); usuarios de BD por `127.0.0.1`. 409 con `errors` ante una clave `UNIQUE` repetida (§6). `?sort` inválido responde 400 (§5.5). Fecha sola mostrada en UTC (§4.3). Contradicciones corregidas: ejemplo 409/422, respuestas sin envoltura, `authenticate()` en el §15, URL base en el §16, tests de Vue 2 en la CI, prefijo y sufijo `store`, plantilla del §12 y desviaciones faltantes en el §13. Ajustes para las auditorías: acciones de la CI fijadas por SHA y `permissions: contents: read`, `engines` sin rango suelto, hook sin falsos positivos, `.gitignore` del frontend con rechazo por defecto, `storage/**`, CORS con `array_filter`, paso de `.env` de la CI que distingue "sin coincidencias" de "error", y toda dependencia 0.x en versión exacta (§11, §14). Ejemplos genéricos en lugar de nombres de proyectos. |
 | 2.8.0 | 2026-10-12 | Lecciones de tres auditorías de seguridad. Principios 9 (un control que no se probó no existe) y 10 (una corrección se cierra en tres pasos) (§3). §5.5 nueva: acceso declarado por endpoint, estructura del SQL fuera de la petición con `SqlIn`, un solo helper por control, HTML y URLs saneados, contraseñas (bcrypt 12, 15 caracteres a 72 bytes), secretos que fallan cerrados, logs sin datos sensibles y cabeceras de la API. `.htaccess` raíz para backends existentes que bloquea `.git/` (§5.2). Endurecimiento de sesiones y código 429 (§6.1, §6.2). Usuarios de BD con privilegios mínimos (§7.1). Configuración de producción (§10). `.gitignore` por patrones y política de versiones (§11). `safeHtml`, sin CDN ni source maps, y CSP (§4.3); tests de saneado en jsdom (§4.5). Comprobación de `.git/HEAD`, auditoría de dependencias y revisión de `.env` en la CI (§14). |
 | 2.7.0 | 2026-10-12 | El frontend versiona sus `.env.[modo]` (sólo valores públicos) e ignora `*.local`; el backend sigue igual (§10, §11). Vuetify: valores por defecto de las versiones 3 y 4, ejemplo de Vue 3 probado y ejemplo de Vue 2 con `scrollBarWidth: 0` (§8.1). CORS `*` prohibido en la API y permitido en archivos públicos (§6.5). `pre-commit` que encuentra el proyecto en la raíz o en una carpeta de primer nivel, y CI para proyectos en subcarpeta (§14). |
 | 2.6.0 | 2026-10-12 | Archivos subidos (§5.4): `multipart/form-data`; tipo verificado con `finfo` y extensión según el tipo; nombre aleatorio; sin SVG ni HTML; públicos en `public/multimedia/` sin ejecución de scripts y privados en `storage/`; la BD guarda sólo la ruta del servidor; 413 si se supera `post_max_size`; borrado contenido con `realpath()`; los archivos subidos no se versionan (§11). Frontend con `FormData` (§4.3). |
